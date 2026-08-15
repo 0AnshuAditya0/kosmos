@@ -7,12 +7,12 @@ from huggingface_hub import hf_hub_download
 
 app = FastAPI()
 
+# Only download what the deployed app actually uses (BEST_STRATEGY = "no_chunk"
+# in rag/harness.py). The other 4 strategies were only needed for the offline
+# eval/compare_strategies.py comparison, not for serving live requests.
 INDEX_FILES = [
-    "no_chunk.faiss", "no_chunk_meta.parquet",
-    "fixed_size.faiss", "fixed_size_meta.parquet",
-    "fixed_size_overlap.faiss", "fixed_size_overlap_meta.parquet",
-    "sentence_aware.faiss", "sentence_aware_meta.parquet",
-    "semantic_chunk.faiss", "semantic_chunk_meta.parquet",
+    "no_chunk.faiss",
+    "no_chunk_meta.parquet",
 ]
 
 os.makedirs("index", exist_ok=True)
@@ -25,7 +25,6 @@ for filename in INDEX_FILES:
             repo_type="dataset",
             filename=filename,
         )
-        
         import shutil
         shutil.copy(downloaded, local_path)
 
@@ -35,6 +34,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 def clean(obj):
     """Recursively convert numpy/NaN types to plain JSON-safe types."""
@@ -47,9 +47,15 @@ def clean(obj):
     if isinstance(obj, (np.floating,)):
         val = float(obj)
         return None if np.isnan(val) else val
-    if isinstance(obj, float) and obj != obj: 
+    if isinstance(obj, float) and obj != obj:
         return None
     return obj
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
 
 @app.post("/ask")
 async def ask(file: UploadFile):

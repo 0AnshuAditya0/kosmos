@@ -1,3 +1,5 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
 datasets
 huggingface_hub
 pandas
@@ -11,4 +13,3 @@ numpy
 sarvamai
 groq
 python-dotenv
-gradio
