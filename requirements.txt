@@ -1,0 +1,14 @@
+datasets
+huggingface_hub
+pandas
+pyarrow
+sentence-transformers
+faiss-cpu
+fastapi
+uvicorn
+python-multipart
+numpy
+sarvamai
+groq
+python-dotenv
+gradio
