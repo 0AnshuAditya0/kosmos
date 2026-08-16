@@ -1,6 +1,7 @@
 from fastapi import FastAPI, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from rag.harness import run
+from pydantic import BaseModel
+from rag.harness import run, run_from_text, run_extractive_from_text
 import numpy as np
 import os
 from huggingface_hub import hf_hub_download
@@ -36,6 +37,19 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+async def preload_model():
+    """
+    Load the embedding model once when the server starts, instead of
+    lazily on the first incoming request. Without this, the FIRST request
+    after every server restart pays the full model-load cost (10-15s+),
+    which is exactly the slow "cold start" we kept seeing in testing.
+    Preloading here means every real user request hits a warm model.
+    """
+    from rag.retriever import get_model
+    get_model()
+
+
 def clean(obj):
     """Recursively convert numpy/NaN types to plain JSON-safe types."""
     if isinstance(obj, dict):
@@ -61,4 +75,29 @@ async def health():
 async def ask(file: UploadFile):
     audio_bytes = await file.read()
     result = run(audio_bytes)
+    return clean(result)
+
+
+class TextQuestion(BaseModel):
+    question: str
+
+
+@app.post("/ask-text")
+async def ask_text(payload: TextQuestion):
+    """
+    Text-input fallback path: skips STT entirely, runs the same
+    retrieval -> guardrails -> generation flow used by /ask.
+    """
+    result = run_from_text(payload.question)
+    return clean(result)
+
+
+@app.post("/ask-text-fast")
+async def ask_text_fast(payload: TextQuestion):
+    """
+    LLM-free path: hybrid (dense + BM25) retrieval + extractive sentence
+    selection. No Groq call. Much faster and fully deterministic latency,
+    at the cost of less fluent (verbatim, not composed) answers.
+    """
+    result = run_extractive_from_text(payload.question)
     return clean(result)

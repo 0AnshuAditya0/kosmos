@@ -1,13 +1,3 @@
----
-title: Kosmos Voice RAG
-emoji: 🎙️
-colorFrom: purple
-colorTo: blue
-sdk: gradio
-sdk_version: 4.0.0
-app_file: app.py
-pinned: false
----
 
 # hhgoa2 — Voice-Enabled RAG (HH Goa 2026, Task 2)
 
