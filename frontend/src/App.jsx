@@ -1,321 +1,88 @@
-import { useState, useRef } from "react";
+import { useRef, useState } from "react";
 import "./App.css";
 
-const API_URL = "http://localhost:8000/ask";
-
-const STATUS_LABELS = {
-  success: "Grounded answer",
-  ungrounded: "Low confidence — insufficient grounding",
-  off_topic: "No context found — declined",
-  unsafe_input: "Unsafe query — declined",
-  error: "Error / retry",
-};
-
-const SAMPLE_QUESTIONS = [
-  { text: "What is a Tesla coil?", tag: "Physics" },
-  { text: "Summarize the key ideas of retrieval-augmented generation.", tag: "AI systems" },
-  { text: "टेस्ला कॉइल क्या है?", tag: "Hindi" },
-  { text: "How can I find the key summaries of prominent books?", tag: "General" },
+const API_URL = import.meta.env.VITE_API_URL || "/ask";
+const QUICK_CHECKS = [
+  { question: "क्या आप पात्र में लाल प्याज उगा सकते हैं?", kind: "grounded", label: "Verified Hindi · Gardening" },
+  { question: "कैटडॉग क्या है?", kind: "grounded", label: "Verified Hindi · Culture" },
+  { question: "पुट्ट नौका क्या है", kind: "grounded", label: "Verified Hindi · Definition" },
+  { question: "टेस्ला कॉइल क्या है?", kind: "decline", label: "Expected decline · absent from index" },
 ];
 
-// Static examples for the "preview a response state" chips on the landing
-// page - these are NOT live queries, just illustrate what each guardrail
-// outcome looks like before the user has asked anything for real.
-const DEMO_STATES = {
-  success: {
-    status: "success",
-    question: "What is a Tesla coil?",
-    answer: "Tesla coils are used to produce spectacular high-voltage long sparking displays. Voltage can exceed 1,000,000 volts and is discharged as an electrical arc.",
-    timing: { stt_ms: 820, retrieval_ms: 105, generation_ms: 512, total_ms: 1437 },
-    sources: [{ language: "hin", score: 0.81, is_selected: 1, chunk_text: "टेस्ला कॉइल का उपयोग शानदार उच्च वोल्टेज..." }],
-  },
-  ungrounded: {
-    status: "ungrounded",
-    question: "Yeah probably, I guess so",
-    answer: null,
-    timing: { stt_ms: 640, retrieval_ms: 98, generation_ms: 430, total_ms: 1168 },
-    sources: [{ language: "hin", score: 0.41, is_selected: 0, chunk_text: "अप्रासंगिक पाठ खंड..." }],
-  },
-  off_topic: {
-    status: "off_topic",
-    question: "What's your favorite color?",
-    answer: null,
-    timing: { stt_ms: 700, retrieval_ms: 88, generation_ms: 0, total_ms: 788 },
-    sources: [],
-  },
-  unsafe_input: {
-    status: "unsafe_input",
-    question: "[flagged input]",
-    answer: null,
-    timing: { stt_ms: 610, retrieval_ms: 0, generation_ms: 0, total_ms: 610 },
-    sources: [],
-  },
-  error: {
-    status: "error",
-    error: "Upstream service timeout - retried twice, then failed.",
-  },
-};
+const NAV = ["Voice RAG", "Sources", "Performance", "About"];
 
-const STAGES = ["Voice Input", "Transcription", "Search", "Verified Answer"];
+function Status({ result }) {
+  if (!result) return null;
+  const declined = result.status !== "success";
+  return <span className={`status ${declined ? "declined" : "grounded"}`}>
+    {declined ? "No verified context — declined" : "Grounded answer"}
+  </span>;
+}
+
+function SourceList({ sources }) {
+  const [open, setOpen] = useState(false);
+  if (!sources?.length) return null;
+  return <section className="context">
+    <button className="context-toggle" onClick={() => setOpen(!open)}>
+      <span>▱ &nbsp; Retrieved context <b>{sources.length}</b></span><span>{open ? "⌃" : "⌄"}</span>
+    </button>
+    {open && <div className="source-list">
+      {sources.map((source, index) => <article className="source" key={`${source.chunk_id}-${index}`}>
+        <div><span className="source-number">{index + 1}</span><span>{source.language === "ben" ? "Bengali" : "Hindi"}</span><span className="evidence">Evidence {Math.round((source.lexical_score || 0) * 100)}%</span></div>
+        <p>{source.chunk_text}</p>
+      </article>)}
+    </div>}
+  </section>;
+}
+
+function VoicePage({ result, loading, submitText, recording, onMic, input, setInput }) {
+  const isLanding = !result && !loading;
+  return <main className="page voice-page">
+    {isLanding ? <section className="hero">
+      <div className="eye">◉</div>
+      <p className="eyebrow">VOICE-ENABLED, SOURCE-FIRST RETRIEVAL</p>
+      <h1>Ask with confidence.</h1>
+      <p className="lede">Kosmos returns a source sentence when it finds direct evidence—and declines when it does not.</p>
+      <div className="reviewer-box">
+        <div><b>Reviewer quick checks</b><span>Real indexed questions plus a deliberate refusal test</span></div>
+        <div className="check-grid">{QUICK_CHECKS.map((item) => <button key={item.question} className={`quick-check ${item.kind}`} onClick={() => submitText(item.question)}>
+          <span className="check-state">{item.kind === "grounded" ? "✓ Expected answer" : "× Expected decline"}</span><strong>{item.question}</strong><small>{item.label}</small>
+        </button>)}</div>
+      </div>
+    </section> : <section className="result-wrap">
+      <div className="steps"><span className="done">● Voice input</span><i/><span className="done">● Transcription</span><i/><span className="done">● Search</span><i/><span className={result ? "active" : ""}>● Verified answer</span></div>
+      {loading ? <div className="loading-card"><div className="pulse"/><b>Checking indexed evidence…</b><p>No LLM generation is running.</p></div> : <>
+        <div className="query-meta"><span>{result.question}</span><small>{result.language || "Text"} · {result.timing?.stt_ms ? "Voice" : "Typed"}</small></div>
+        <article className="answer-card"><header><span className="answer-label">ANSWER</span><Status result={result}/></header>
+          <p className="answer">{result.answer || "No answer — the system declined rather than guess."}</p>
+          <footer><b>Total {result.timing?.total_ms ?? "–"}ms</b><span>STT {result.timing?.stt_ms ?? 0}ms · Retrieval {result.timing?.retrieval_ms ?? "–"}ms · Generation 0ms</span><em>Verbatim source answer</em></footer>
+        </article>
+        <SourceList sources={result.sources}/>
+      </>}
+    </section>}
+    <InputBar recording={recording} onMic={onMic} input={input} setInput={setInput} submitText={submitText} loading={loading}/>
+  </main>;
+}
+
+function InputBar({ recording, onMic, input, setInput, submitText, loading }) {
+  return <div className="input-area"><div className="input-bar"><button className={`mic ${recording ? "recording" : ""}`} onClick={onMic} disabled={loading}>🎙</button><input value={input} disabled={loading || recording} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submitText(input)} placeholder="Ask a question…"/><button className="send" disabled={!input.trim() || loading || recording} onClick={() => submitText(input)}>↑</button></div><small>{recording ? "Listening — tap again to submit" : "Tap to speak · text input available as fallback"}</small></div>;
+}
+
+function InfoPage({ page }) {
+  const content = {
+    Sources: <><h1>Sources</h1><p className="lede left">Kosmos searches a local multilingual passage index. Answers are never composed beyond the retrieved source sentence.</p><div className="metrics"><Metric label="Indexed passages" value="40,000"/><Metric label="Languages" value="Hindi + Bengali"/><Metric label="Vector index" value="FAISS"/></div><div className="info-card"><b>Evidence rule</b><p>A passage must contain direct content-term overlap with the user’s question. Semantic similarity by itself is not enough to produce an answer.</p></div></>,
+    Performance: <><span className="target">ϟ POST-TRANSCRIPT TARGET</span><h1>Performance</h1><p className="lede left">The serving route has no Groq call and reports stage timing on every response.</p><div className="metrics"><Metric label="Generation" value="0 ms"/><Metric label="Serving model" value="In memory"/><Metric label="Quality policy" value="Decline > guess"/></div><div className="info-card"><b>Honest measurement</b><p>The 200 ms objective applies after text is available. Voice-to-answer includes recording time and Sarvam network STT, which is displayed separately rather than hidden.</p></div></>,
+    About: <><span className="target">HH GOA 2026</span><h1>A voice retrieval assistant that answers with evidence.</h1><p className="lede left">Kosmos turns Hindi and Bengali questions into traceable, source-first answers with a deterministic refusal path.</p><div className="features"><Metric label="Voice-first" value="Sarvam STT"/><Metric label="Multilingual" value="Hindi + Bengali"/><Metric label="Grounded" value="Source sentence"/><Metric label="Fast path" value="No LLM"/></div></>,
+  };
+  return <main className="page info-page">{content[page]}</main>;
+}
+function Metric({ label, value }) { return <div className="metric"><small>{label}</small><strong>{value}</strong></div>; }
 
 export default function App() {
-  const [recording, setRecording] = useState(false);
-  const [result, setResult] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [history, setHistory] = useState([]);
-  const [textInput, setTextInput] = useState("");
-  const mediaRecorderRef = useRef(null);
-  const chunksRef = useRef([]);
-
-  async function startRecording() {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      chunksRef.current = [];
-      recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
-      recorder.onstop = () => handleSubmitAudio();
-      recorder.start();
-      mediaRecorderRef.current = recorder;
-      setRecording(true);
-    } catch (err) {
-      setResult({ status: "error", error: "Microphone access denied or unavailable." });
-    }
-  }
-
-  function stopRecording() {
-    mediaRecorderRef.current.stop();
-    mediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop());
-    setRecording(false);
-  }
-
-  async function handleSubmitAudio() {
-    const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-    setLoading(true);
-    setResult(null);
-
-    const formData = new FormData();
-    formData.append("file", blob, "question.webm");
-
-    await submit(formData);
-  }
-  async function handleSubmitText(question) {
-    if (!question || !question.trim()) return;
-    setLoading(true);
-    setResult(null);
-    setTextInput("");
-
-    try {
-      const res = await fetch(API_URL.replace("/ask", "/ask-text"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question }),
-      });
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
-      const data = await res.json();
-      setResult(data);
-      setHistory((h) => [data, ...h].slice(0, 10));
-    } catch (err) {
-      setResult({ status: "error", error: String(err.message || err) });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function submit(formData) {
-    try {
-      const res = await fetch(API_URL, { method: "POST", body: formData });
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
-      const data = await res.json();
-      setResult(data);
-      setHistory((h) => [data, ...h].slice(0, 10));
-    } catch (err) {
-      setResult({ status: "error", error: String(err.message || err) });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const currentStage = loading
-    ? 1
-    : result
-      ? (result.status === "success" ? 4 : result.status === "error" ? 0 : 3)
-      : 0;
-
-  const showLanding = !result && !loading;
-
-  return (
-    <div className="shell">
-      <header className="topbar">
-        <div className="brand">
-          <span className="brand-icon">👁</span>
-          Kosmos
-        </div>
-        <nav className="top-nav">
-          <span className="active">Voice RAG</span>
-          <span>Sources</span>
-          <span>Performance</span>
-          <span>About</span>
-        </nav>
-        <div className="status-chip">
-          <span className="status-dot" />
-          System Ready
-        </div>
-      </header>
-
-      <main className="main">
-        {showLanding && (
-          <div className="landing">
-            <div className="landing-icon">👁</div>
-            <h1>Ask anything</h1>
-            <p className="landing-sub">
-              Speak naturally. Kosmos retrieves grounded information and answers with evidence.
-            </p>
-
-            <div className="sample-grid">
-              {SAMPLE_QUESTIONS.map((q, i) => (
-                <button key={i} className="sample-card" onClick={() => handleSubmitText(q.text)}>
-                  <span className="sample-text">{q.text}</span>
-                  <span className="sample-tag">{q.tag}</span>
-                </button>
-              ))}
-            </div>
-
-            <div className="preview-row">
-              <p className="preview-label">PREVIEW A RESPONSE STATE</p>
-              <div className="preview-chips">
-                <button className="preview-chip" onClick={() => setResult(DEMO_STATES.success)}>Grounded answer</button>
-                <button className="preview-chip" onClick={() => setResult(DEMO_STATES.ungrounded)}>Low confidence</button>
-                <button className="preview-chip" onClick={() => setResult(DEMO_STATES.off_topic)}>No context</button>
-                <button className="preview-chip" onClick={() => setResult(DEMO_STATES.unsafe_input)}>Unsafe query</button>
-                <button className="preview-chip" onClick={() => setResult(DEMO_STATES.error)}>Error / retry</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {!showLanding && (
-          <>
-            <div className="stage-track">
-              {STAGES.map((s, i) => (
-                <div key={s} className={`stage ${i < currentStage ? "done" : ""} ${i === currentStage ? "active" : ""}`}>
-                  <span className="stage-dot" />
-                  {s}
-                  {i < STAGES.length - 1 && <span className="stage-line" />}
-                </div>
-              ))}
-            </div>
-
-            {result && result.status !== "error" && (
-              <>
-                <div className="transcript-block">
-                  <p className="q-text">{result.question}</p>
-                </div>
-
-                <div className="answer-card">
-                  <div className="answer-card-head">
-                    <span className="answer-label">Answer</span>
-                    <span className={`status-pill status-${result.status}`}>
-                      {STATUS_LABELS[result.status] || result.status}
-                    </span>
-                  </div>
-
-                  <p className="answer-body">
-                    {result.answer || "No answer — the system declined rather than guess."}
-                  </p>
-
-                  {result.timing && (
-                    <div className="answer-footer">
-                      <span className="latency-pill">Total {result.timing.total_ms}ms</span>
-                      <span className="mini-timing">
-                        STT {result.timing.stt_ms ?? "-"}ms · Retrieval {result.timing.retrieval_ms ?? "-"}ms · Gen {result.timing.generation_ms ?? "-"}ms
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-
-            {result && result.status === "error" && (
-              <div className="answer-card error">
-                <p>{result.error}</p>
-              </div>
-            )}
-
-            {result?.sources?.length > 0 && (
-              <div className="sources-inline">
-                <h3>Grounded sources ({result.sources.length})</h3>
-                {result.sources.map((s, i) => (
-                  <div key={i} className="source-card">
-                    <div className="source-top">
-                      <span>{i + 1}.</span>
-                      <span className="source-lang">{s.language}</span>
-                      {s.is_selected === 1 && <span className="gold-badge">ground truth</span>}
-                      <span className="source-score">score {s.score?.toFixed(3)}</span>
-                    </div>
-                    <p className="source-text">{s.chunk_text}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {history.length > 1 && (
-              <div className="history">
-                <h4>Previous</h4>
-                {history.slice(1).map((h, i) => (
-                  <div key={i} className="history-row">
-                    <span className={`mini-badge status-${h.status}`} />
-                    <span>{h.question}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
-      </main>
-
-      <div className="input-bar">
-        <button
-          className={`mic-pill ${recording ? "recording" : ""}`}
-          onClick={recording ? stopRecording : startRecording}
-          disabled={loading}
-        >
-          🎙
-        </button>
-        <input
-          type="text"
-          placeholder="Ask a question..."
-          value={textInput}
-          onChange={(e) => setTextInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSubmitText(textInput)}
-          disabled={loading || recording}
-        />
-        <button
-          className="send-btn"
-          onClick={() => handleSubmitText(textInput)}
-          disabled={loading || recording || !textInput.trim()}
-        >
-          ↑
-        </button>
-      </div>
-      <p className="input-hint">
-        {recording ? "Listening — tap mic to stop" : loading ? "Processing..." : "Tap to speak · text input available as fallback"}
-      </p>
-
-      {showLanding && (
-        <details className="tech-pipeline">
-          <summary>
-            Technical pipeline
-            <span>⌄</span>
-          </summary>
-          <div className="tech-pipeline-body">
-            Voice input → Sarvam speech-to-text → FAISS retrieval (no_chunk
-            strategy, 40k indexed passages, Hindi + Bengali) → guardrail
-            checks (unsafe input, off-topic, groundedness) → Groq-generated
-            grounded answer. Full pipeline runs through a retry-enabled
-            harness with per-stage latency tracking.
-          </div>
-        </details>
-      )}
-    </div>
-  );
+  const [page, setPage] = useState("Voice RAG"), [result, setResult] = useState(null), [loading, setLoading] = useState(false), [recording, setRecording] = useState(false), [input, setInput] = useState("");
+  const recorder = useRef(null), chunks = useRef([]);
+  async function submitText(question) { if (!question?.trim()) return; setLoading(true); setResult(null); setInput(""); try { const response = await fetch(`${API_URL}-text-fast`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }) }); setResult(await response.json()); } catch (error) { setResult({ status: "error", question, error: String(error), timing: {} }); } finally { setLoading(false); } }
+  async function submitAudio() { const data = new FormData(); data.append("file", new Blob(chunks.current, { type: "audio/webm" }), "question.webm"); setLoading(true); setResult(null); try { const response = await fetch(API_URL, { method: "POST", body: data }); setResult(await response.json()); } catch (error) { setResult({ status: "error", error: String(error), timing: {} }); } finally { setLoading(false); } }
+  async function onMic() { if (recording) { recorder.current.stop(); recorder.current.stream.getTracks().forEach((track) => track.stop()); setRecording(false); return; } try { const stream = await navigator.mediaDevices.getUserMedia({ audio: true }); const current = new MediaRecorder(stream); chunks.current = []; current.ondataavailable = (event) => chunks.current.push(event.data); current.onstop = submitAudio; current.start(); recorder.current = current; setRecording(true); } catch { setResult({ status: "error", error: "Microphone access was denied.", timing: {} }); } }
+  return <div className="shell"><header><button className="brand" onClick={() => setPage("Voice RAG")}>◉ <b>Kosmos</b></button><nav>{NAV.map((item) => <button className={page === item ? "selected" : ""} key={item} onClick={() => setPage(item)}>{item}</button>)}</nav><span className="ready">● System ready</span></header>{page === "Voice RAG" ? <VoicePage {...{result, loading, submitText, recording, onMic, input, setInput}}/> : <InfoPage page={page}/>}</div>;
 }

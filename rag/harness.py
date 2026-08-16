@@ -1,8 +1,9 @@
 import time
 
 from stt.sarvam_stt import transcribe
-from rag.retriever import retrieve
 from rag.generator import generate
+from rag.retriever import retrieve
+from rag.fast_path import retrieve_with_evidence, extract_verified_sentence
 
 from guardrails.checks import (
     unsafe_input_check,
@@ -33,6 +34,49 @@ def _with_retry(function, max_retries=2):
     raise last_error
 
 
+FALLBACK_STRATEGIES = ["no_chunk", "sentence_aware", "fixed_size", "fixed_size_overlap"]
+
+def _fast_answer_from_question(question: str, k: int = 5) -> dict:
+    start = time.perf_counter()
+    result = {
+        "answer": None, "sources": [], "status": "error",
+        "timing": {"generation_ms": 0}, "question": question,
+        "language": None, "mode": "extractive",
+    }
+    try:
+        if not unsafe_input_check(question):
+            result["status"] = "unsafe_input"
+            return result
+
+        retrieval_start = time.perf_counter()
+
+        chunks, extraction = [], {"verified": False}
+        for strategy in FALLBACK_STRATEGIES:
+            chunks = retrieve_with_evidence(question, strategy, k=k)
+            extraction = extract_verified_sentence(question, chunks)
+            if extraction.get("verified"):
+                break
+
+        result["timing"]["retrieval_ms"] = round(
+            (time.perf_counter() - retrieval_start) * 1000, 2
+        )
+        result["sources"] = chunks if extraction.get("verified") else []
+
+        if not extraction.get("verified"):
+            result["status"] = "off_topic"
+            return result
+
+        result["answer"] = extraction["answer"]
+        result["source_chunk_id"] = extraction["source_chunk_id"]
+        result["confidence"] = extraction["confidence"]
+        result["status"] = "success"
+    except Exception as exc:
+        result["error"] = str(exc)
+    finally:
+        result["timing"]["total_ms"] = round((time.perf_counter() - start) * 1000, 2)
+    return result
+
+
 def run(audio_bytes: bytes, k: int = 5) -> dict:
     start = time.perf_counter()
 
@@ -60,85 +104,18 @@ def run(audio_bytes: bytes, k: int = 5) -> dict:
             (time.perf_counter() - stt_start) * 1000,
             2,
         )
+        stt_ms = result["timing"]["stt_ms"]
 
         result["question"] = question
         result["language"] = language
 
-        # -------------------------
-        # 2. Unsafe input check
-        # -------------------------
-        if not unsafe_input_check(question):
-            result["status"] = "unsafe_input"
-            result["timing"]["total_ms"] = round(
-                (time.perf_counter() - start) * 1000,
-                2,
-            )
-            return result
-
-        # -------------------------
-        # 3. Retrieval
-        # -------------------------
-        retrieval_start = time.perf_counter()
-
-        chunks = retrieve(
-            question,
-            BEST_STRATEGY,
-            k=k,
+        fast_result = _fast_answer_from_question(question, k=k)
+        result.update(fast_result)
+        result["language"] = language
+        result["timing"]["stt_ms"] = stt_ms
+        result["timing"]["total_ms"] = round(
+            (time.perf_counter() - start) * 1000, 2
         )
-
-        result["timing"]["retrieval_ms"] = round(
-            (time.perf_counter() - retrieval_start) * 1000,
-            2,
-        )
-
-        # -------------------------
-        # 4. Off-topic check
-        # -------------------------
-        if not off_topic_check(chunks):
-            result["status"] = "off_topic"
-            result["sources"] = chunks
-
-            result["timing"]["total_ms"] = round(
-                (time.perf_counter() - start) * 1000,
-                2,
-            )
-
-            return result
-
-        # -------------------------
-        # 5. Generation
-        # -------------------------
-        generation_start = time.perf_counter()
-
-        answer = _with_retry(
-            lambda: generate(question, chunks)
-        )
-
-        result["timing"]["generation_ms"] = round(
-            (time.perf_counter() - generation_start) * 1000,
-            2,
-        )
-
-        # -------------------------
-        # 6. Groundedness check
-        # -------------------------
-        if not groundedness_check(answer, chunks):
-            result["status"] = "ungrounded"
-            result["sources"] = chunks
-
-            result["timing"]["total_ms"] = round(
-                (time.perf_counter() - start) * 1000,
-                2,
-            )
-
-            return result
-
-        # -------------------------
-        # 7. Success
-        # -------------------------
-        result["answer"] = answer
-        result["sources"] = chunks
-        result["status"] = "success"
 
     except Exception as exc:
         result["status"] = "error"
@@ -157,52 +134,8 @@ def run_from_text(question: str, k: int = 5) -> dict:
     Skips the STT stage entirely - used by the /ask-text fallback route
     for when a user types instead of speaks (or when a mic isn't available).
     """
-    start = time.perf_counter()
-
-    result = {
-        "answer": None,
-        "sources": [],
-        "status": "error",
-        "timing": {"stt_ms": 0},
-        "question": question,
-        "language": None,
-    }
-
-    try:
-        if not unsafe_input_check(question):
-            result["status"] = "unsafe_input"
-            result["timing"]["total_ms"] = round((time.perf_counter() - start) * 1000, 2)
-            return result
-
-        retrieval_start = time.perf_counter()
-        chunks = retrieve(question, BEST_STRATEGY, k=k)
-        result["timing"]["retrieval_ms"] = round((time.perf_counter() - retrieval_start) * 1000, 2)
-
-        if not off_topic_check(chunks):
-            result["status"] = "off_topic"
-            result["sources"] = chunks
-            result["timing"]["total_ms"] = round((time.perf_counter() - start) * 1000, 2)
-            return result
-
-        generation_start = time.perf_counter()
-        answer = _with_retry(lambda: generate(question, chunks))
-        result["timing"]["generation_ms"] = round((time.perf_counter() - generation_start) * 1000, 2)
-
-        if not groundedness_check(answer, chunks):
-            result["status"] = "ungrounded"
-            result["sources"] = chunks
-            result["timing"]["total_ms"] = round((time.perf_counter() - start) * 1000, 2)
-            return result
-
-        result["answer"] = answer
-        result["sources"] = chunks
-        result["status"] = "success"
-
-    except Exception as exc:
-        result["status"] = "error"
-        result["error"] = str(exc)
-
-    result["timing"]["total_ms"] = round((time.perf_counter() - start) * 1000, 2)
+    result = _fast_answer_from_question(question, k=k)
+    result["timing"]["stt_ms"] = 0
     return result
 
 
@@ -214,52 +147,6 @@ def run_extractive_from_text(question: str, k: int = 5) -> dict:
     generative path, at the cost of less fluent answers (verbatim spans,
     not composed sentences).
     """
-    from rag.hybrid_retriever import hybrid_retrieve
-    from rag.extractive import extract_answer
-
-    start = time.perf_counter()
-
-    result = {
-        "answer": None,
-        "sources": [],
-        "status": "error",
-        "timing": {"stt_ms": 0, "generation_ms": 0},
-        "question": question,
-        "language": None,
-        "mode": "extractive",
-    }
-
-    try:
-        if not unsafe_input_check(question):
-            result["status"] = "unsafe_input"
-            result["timing"]["total_ms"] = round((time.perf_counter() - start) * 1000, 2)
-            return result
-
-        retrieval_start = time.perf_counter()
-        chunks = hybrid_retrieve(question, BEST_STRATEGY, k=k)
-        result["timing"]["retrieval_ms"] = round((time.perf_counter() - retrieval_start) * 1000, 2)
-
-        if not off_topic_check(chunks):
-            result["status"] = "off_topic"
-            result["sources"] = chunks
-            result["timing"]["total_ms"] = round((time.perf_counter() - start) * 1000, 2)
-            return result
-
-        extraction = extract_answer(question, chunks)
-
-        if not extraction["answer"] or extraction["score"] < 0.3:
-            result["status"] = "ungrounded"
-            result["sources"] = chunks
-            result["timing"]["total_ms"] = round((time.perf_counter() - start) * 1000, 2)
-            return result
-
-        result["answer"] = extraction["answer"]
-        result["sources"] = chunks
-        result["status"] = "success"
-
-    except Exception as exc:
-        result["status"] = "error"
-        result["error"] = str(exc)
-
-    result["timing"]["total_ms"] = round((time.perf_counter() - start) * 1000, 2)
+    result = _fast_answer_from_question(question, k=k)
+    result["timing"]["stt_ms"] = 0
     return result

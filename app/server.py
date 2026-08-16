@@ -1,5 +1,8 @@
-from fastapi import FastAPI, UploadFile
+from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from rag.harness import run, run_from_text, run_extractive_from_text
 import numpy as np
@@ -7,13 +10,17 @@ import os
 from huggingface_hub import hf_hub_download
 
 app = FastAPI()
+MAX_AUDIO_BYTES = 12 * 1024 * 1024
+FRONTEND_DIST = "frontend/dist"
 
 # Only download what the deployed app actually uses (BEST_STRATEGY = "no_chunk"
 # in rag/harness.py). The other 4 strategies were only needed for the offline
 # eval/compare_strategies.py comparison, not for serving live requests.
 INDEX_FILES = [
-    "no_chunk.faiss",
-    "no_chunk_meta.parquet",
+    "no_chunk.faiss", "no_chunk_meta.parquet",
+    "sentence_aware.faiss", "sentence_aware_meta.parquet",
+    "fixed_size.faiss", "fixed_size_meta.parquet",
+    "fixed_size_overlap.faiss", "fixed_size_overlap_meta.parquet",
 ]
 
 os.makedirs("index", exist_ok=True)
@@ -29,9 +36,15 @@ for filename in INDEX_FILES:
         import shutil
         shutil.copy(downloaded, local_path)
 
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "*").split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -39,15 +52,9 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def preload_model():
-    """
-    Load the embedding model once when the server starts, instead of
-    lazily on the first incoming request. Without this, the FIRST request
-    after every server restart pays the full model-load cost (10-15s+),
-    which is exactly the slow "cold start" we kept seeing in testing.
-    Preloading here means every real user request hits a warm model.
-    """
-    from rag.retriever import get_model
-    get_model()
+    from rag.fast_path import warm_fast_path
+    for strategy in ["no_chunk", "sentence_aware", "fixed_size", "fixed_size_overlap"]:
+        warm_fast_path(strategy)
 
 
 def clean(obj):
@@ -68,13 +75,17 @@ def clean(obj):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "mode": "deterministic-extractive"}
 
 
 @app.post("/ask")
 async def ask(file: UploadFile):
     audio_bytes = await file.read()
-    result = run(audio_bytes)
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Audio file is empty.")
+    if len(audio_bytes) > MAX_AUDIO_BYTES:
+        raise HTTPException(status_code=413, detail="Audio is larger than 12 MB.")
+    result = await run_in_threadpool(run, audio_bytes)
     return clean(result)
 
 
@@ -88,7 +99,7 @@ async def ask_text(payload: TextQuestion):
     Text-input fallback path: skips STT entirely, runs the same
     retrieval -> guardrails -> generation flow used by /ask.
     """
-    result = run_from_text(payload.question)
+    result = await run_in_threadpool(run_from_text, payload.question)
     return clean(result)
 
 
@@ -99,5 +110,17 @@ async def ask_text_fast(payload: TextQuestion):
     selection. No Groq call. Much faster and fully deterministic latency,
     at the cost of less fluent (verbatim, not composed) answers.
     """
-    result = run_extractive_from_text(payload.question)
+    result = await run_in_threadpool(run_extractive_from_text, payload.question)
     return clean(result)
+
+
+@app.get("/")
+async def frontend():
+    index_html = os.path.join(FRONTEND_DIST, "index.html")
+    if os.path.exists(index_html):
+        return FileResponse(index_html)
+    return {"status": "ok", "docs": "/docs"}
+
+
+if os.path.isdir(FRONTEND_DIST):
+    app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
