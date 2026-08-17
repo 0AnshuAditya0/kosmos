@@ -14,21 +14,14 @@ from typing import Any
 
 from rag.retriever import retrieve_batch
 
-
 CANDIDATE_POOL_SIZE = 12
 MIN_LEXICAL_SCORE = 0.18
 MIN_MATCHING_TERMS = 1
-# Single-content-word queries (common after stopword removal, e.g. just
-# "कॉर्पोरेशन") make lexical presence alone a weak signal - the word can
-# appear once in an unrelated passage and still score matches=1,
-# lexical_score=1.0. Requiring the source chunk's dense similarity to also
-# clear a real bar prevents an incidental keyword mention in an off-topic
+
 # passage from passing verification.
 MIN_DENSE_SCORE_FOR_VERIFICATION = 0.55
 SENTENCE_SPLIT_RE = re.compile(r"(?<=[।.!?])\s+")
 
-# Common connector/question words across the supported languages. This is
-# intentionally small: domain words must remain available as evidence.
 STOPWORDS = frozenset({
     "the", "a", "an", "is", "are", "was", "were", "what", "which",
     "how", "why", "when", "where", "who", "of", "to", "in", "for",
@@ -76,8 +69,7 @@ def retrieve_with_evidence(question: str, strategy_name: str, k: int = 5) -> lis
         )
         candidate["lexical_score"] = round(lexical_score, 3)
         candidate["matching_terms"] = matching_terms
-        # Dense similarity keeps semantic ranking useful, but lexical evidence
-        # is required before the result can be used to answer a question.
+        
         candidate["evidence_score"] = round(
             0.75 * float(candidate["score"]) + 0.25 * lexical_score, 3
         )
@@ -94,16 +86,12 @@ def extract_verified_sentence(question: str, chunks: list[dict[str, Any]]) -> di
 
     for chunk in chunks[:3]:
         for sentence in _sentences(chunk.get("chunk_text", "")):
-            # Skip sentences that are just the question echoed back verbatim
-            # (a real artifact of sentence-level chunking, where a passage
-            # like "Q? Answer..." gets split into a fragment containing only
-            # the question text) - that fragment is not an answer.
+            
             if _normalize(sentence) == question_normalized:
                 continue
 
             coverage, matches = _lexical_score(question_tokens, sentence)
-            # Give the source ranking a small influence when several sentences
-            # contain the same amount of direct evidence.
+            
             score = coverage + 0.10 * float(chunk["score"])
             candidate = (score, matches, sentence, chunk)
             if best is None or candidate[0] > best[0]:
@@ -115,13 +103,6 @@ def extract_verified_sentence(question: str, chunks: list[dict[str, Any]]) -> di
     score, matches, sentence, chunk = best
     dense_score = float(chunk.get("score", 0.0))
 
-    # This embedding model's cosine scores cluster tightly (roughly 0.6-0.7)
-    # for both genuinely relevant and merely coincidental matches, so a fixed
-    # dense-score threshold alone cannot reliably separate signal from noise.
-    # For single-content-word queries specifically (common in this dataset,
-    # e.g. "X क्या है?"), require the matched term to appear near the start
-    # of the winning sentence - a real definitional cue ("X is/means...")
-    # rather than an incidental mention deep in an unrelated passage.
     definitional_ok = True
     if len(question_tokens) == 1:
         term = next(iter(question_tokens))

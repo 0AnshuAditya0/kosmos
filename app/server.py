@@ -7,15 +7,13 @@ from pydantic import BaseModel
 from rag.harness import run, run_from_text, run_extractive_from_text
 import numpy as np
 import os
-from huggingface_hub import hf_hub_download
+from huggingface_hub import hf_hub_download, login
+
 
 app = FastAPI()
 MAX_AUDIO_BYTES = 12 * 1024 * 1024
 FRONTEND_DIST = "frontend/dist"
 
-# Only download what the deployed app actually uses (BEST_STRATEGY = "no_chunk"
-# in rag/harness.py). The other 4 strategies were only needed for the offline
-# eval/compare_strategies.py comparison, not for serving live requests.
 INDEX_FILES = [
     "no_chunk.faiss", "no_chunk_meta.parquet",
     "sentence_aware.faiss", "sentence_aware_meta.parquet",
@@ -28,11 +26,16 @@ os.makedirs("index", exist_ok=True)
 for filename in INDEX_FILES:
     local_path = f"index/{filename}"
     if not os.path.exists(local_path):
-        downloaded = hf_hub_download(
-            repo_id="strelizi/kosmos-index",
-            repo_type="dataset",
-            filename=filename,
-        )
+        try:
+            downloaded = hf_hub_download(
+                repo_id="strelizi/kosmos-index",
+                repo_type="dataset",
+                filename=filename,
+                token=os.getenv("HF_TOKEN"),
+            )
+        except Exception as e:
+            print(f"failed downloading {filename}: {e}")
+            raise
         import shutil
         shutil.copy(downloaded, local_path)
 
@@ -95,21 +98,12 @@ class TextQuestion(BaseModel):
 
 @app.post("/ask-text")
 async def ask_text(payload: TextQuestion):
-    """
-    Text-input fallback path: skips STT entirely, runs the same
-    retrieval -> guardrails -> generation flow used by /ask.
-    """
     result = await run_in_threadpool(run_from_text, payload.question)
     return clean(result)
 
 
 @app.post("/ask-text-fast")
 async def ask_text_fast(payload: TextQuestion):
-    """
-    LLM-free path: hybrid (dense + BM25) retrieval + extractive sentence
-    selection. No Groq call. Much faster and fully deterministic latency,
-    at the cost of less fluent (verbatim, not composed) answers.
-    """
     result = await run_in_threadpool(run_extractive_from_text, payload.question)
     return clean(result)
 
