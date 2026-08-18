@@ -16,9 +16,7 @@ FRONTEND_DIST = "frontend/dist"
 
 INDEX_FILES = [
     "no_chunk.faiss", "no_chunk_meta.parquet",
-    "sentence_aware.faiss", "sentence_aware_meta.parquet",
-    "fixed_size.faiss", "fixed_size_meta.parquet",
-    "fixed_size_overlap.faiss", "fixed_size_overlap_meta.parquet",
+    "sentence_aware.faiss", "sentence_aware_meta.parquet"
 ]
 
 os.makedirs("index", exist_ok=True)
@@ -56,7 +54,7 @@ app.add_middleware(
 @app.on_event("startup")
 async def preload_model():
     from rag.fast_path import warm_fast_path
-    for strategy in ["no_chunk", "sentence_aware", "fixed_size", "fixed_size_overlap"]:
+    for strategy in ["no_chunk", "sentence_aware"]:
         warm_fast_path(strategy)
 
 

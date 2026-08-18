@@ -37,7 +37,7 @@ def get_model():
     return _model
 
 
-@lru_cache(maxsize=len(STRATEGIES))
+@lru_cache(maxsize=2)
 def load_strategy(strategy_name):
     """Load and cache one FAISS index and its metadata."""
 
