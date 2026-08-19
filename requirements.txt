@@ -13,3 +13,4 @@ numpy
 sarvamai
 groq
 python-dotenv
+onnxruntime

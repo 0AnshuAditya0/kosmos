@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Bake the serving model into the image. This avoids a hidden Hugging Face
 # download and a multi-second cold start when a container is first deployed.
 ENV HF_HOME=/opt/huggingface
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-m3')"
 
 COPY . .
 COPY --from=frontend-build /frontend/dist ./frontend/dist

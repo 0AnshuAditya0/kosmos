@@ -1,30 +1,36 @@
-from rag.retriever import retrieve, STRATEGIES
+import sys
+import io
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8")
 
+from rag.retriever import retrieve
+import time
 
-query = "क्या आप पात्र में लाल प्याज उगा सकते हैं?"
+queries = [
+    ("Hindi", "क्या आप पात्र में लाल प्याज उगा सकते हैं?", 78076),
+    ("Bengali", "আপনি কি পাত্রে লাল পেঁয়াজ জন্মাতে পারেন?", 78076),
+    ("English", "Can you grow red onions in containers?", 78076),
+]
 
-for strategy in STRATEGIES:
-    print("\n" + "=" * 70)
-    print(f"STRATEGY: {strategy}")
-    print("=" * 70)
+strategy = "no_chunk_bge"
+print(f"Testing Strategy: {strategy}")
+print("=" * 70)
 
-    results = retrieve(
-        query,
-        strategy_name=strategy,
-        k=5
-    )
-
-    for rank, result in enumerate(results, start=1):
-        print(f"\n--- Result {rank} ---")
-        print(f"Score: {result['score']:.4f}")
-        print(f"Query ID: {result['query_id']}")
-        print(f"Selected: {result['is_selected']}")
-        print(f"Language: {result['language']}")
-        print(f"Chunk ID: {result['chunk_id']}")
-        print(f"Chunk: {result['chunk_text'][:250]}")
-
-        if (
-            result["is_selected"] == 1
-            and result["query_id"] == 78076
-        ):
-            print(">>> CORRECT PASSAGE FOUND <<<")
+for lang, query_text, expected_qid in queries:
+    print(f"\n--- Language: {lang} | Query: '{query_text}' ---")
+    t0 = time.perf_counter()
+    results = retrieve(query_text, strategy_name=strategy, k=5)
+    t1 = time.perf_counter()
+    print(f"Latency: {(t1 - t0) * 1000:.1f}ms")
+    
+    found = False
+    for rank, res in enumerate(results, start=1):
+        is_match = (res["is_selected"] == 1 and float(res["query_id"]) == float(expected_qid))
+        mark = " <<< [CORRECT TARGET MATCH]" if is_match else ""
+        print(f"  Rank {rank} | Score: {res['score']:.4f} | Lang: {res['language']} | QID: {res['query_id']}{mark}")
+        if is_match:
+            found = True
+            print(f"         Snippet: {res['chunk_text'][:120]}...")
+            
+    if not found:
+        print("  ❌ Target match NOT in top 5!")

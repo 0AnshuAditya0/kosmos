@@ -11,7 +11,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 SUMMARY_PATH = OUTPUT_DIR / "strategy_comparison_all.csv"
 DETAIL_PATH = OUTPUT_DIR / "query_results_all.csv"
 
-STRATEGIES = ["no_chunk", "sentence_aware"]
+STRATEGIES = ["no_chunk_bge"]
 TOP_K = 10
 BATCH_SIZE = 64
 
@@ -19,12 +19,20 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(
 logger = logging.getLogger(__name__)
 
 
-def load_test_queries():
+def load_test_queries(samples_per_lang: int = 150):
     df = pd.read_parquet(SAMPLE_PATH)
     df = df[df["query_id"].notna() & (df["is_selected"] == 1) & df["query_text"].notna()].copy()
     df = df.drop_duplicates(subset=["query_id", "language"])
     df["query_id"] = df["query_id"].astype(float)
-    logger.info("Evaluation queries: %d", len(df))
+    
+    sampled_dfs = []
+    for lang in df["language"].unique():
+        lang_df = df[df["language"] == lang]
+        n_sample = min(samples_per_lang, len(lang_df))
+        sampled_dfs.append(lang_df.sample(n=n_sample, random_state=42))
+    
+    df = pd.concat(sampled_dfs, ignore_index=True)
+    logger.info("Evaluation queries: %d (balanced %d/lang)", len(df), samples_per_lang)
     return df
 
 

@@ -34,8 +34,6 @@ def _with_retry(function, max_retries=2):
     raise last_error
 
 
-FALLBACK_STRATEGIES = ["no_chunk", "sentence_aware", "fixed_size", "fixed_size_overlap"]
-
 def _fast_answer_from_question(question: str, k: int = 5) -> dict:
     start = time.perf_counter()
     result = {
@@ -50,12 +48,8 @@ def _fast_answer_from_question(question: str, k: int = 5) -> dict:
 
         retrieval_start = time.perf_counter()
 
-        chunks, extraction = [], {"verified": False}
-        for strategy in FALLBACK_STRATEGIES:
-            chunks = retrieve_with_evidence(question, strategy, k=k)
-            extraction = extract_verified_sentence(question, chunks)
-            if extraction.get("verified"):
-                break
+        chunks = retrieve_with_evidence(question, BEST_STRATEGY, k=k)
+        extraction = extract_verified_sentence(question, chunks)
 
         result["timing"]["retrieval_ms"] = round(
             (time.perf_counter() - retrieval_start) * 1000, 2

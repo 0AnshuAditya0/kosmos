@@ -15,8 +15,7 @@ MAX_AUDIO_BYTES = 12 * 1024 * 1024
 FRONTEND_DIST = "frontend/dist"
 
 INDEX_FILES = [
-    "no_chunk.faiss", "no_chunk_meta.parquet",
-    "sentence_aware.faiss", "sentence_aware_meta.parquet"
+    "no_chunk_bge.faiss", "no_chunk_bge_meta.parquet"
 ]
 
 os.makedirs("index", exist_ok=True)
@@ -54,8 +53,9 @@ app.add_middleware(
 @app.on_event("startup")
 async def preload_model():
     from rag.fast_path import warm_fast_path
-    for strategy in ["no_chunk", "sentence_aware"]:
-        warm_fast_path(strategy)
+    from rag.retriever import get_onnx_session
+    get_onnx_session()
+    warm_fast_path("no_chunk")
 
 
 def clean(obj):
