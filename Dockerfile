@@ -13,12 +13,12 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Bake the serving model into the image. This avoids a hidden Hugging Face
-# download and a multi-second cold start when a container is first deployed.
+# Bake the serving model and compile to ONNX inside the image.
 ENV HF_HOME=/opt/huggingface
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')"
 
 COPY . .
+RUN python index/export_onnx.py
 COPY --from=frontend-build /frontend/dist ./frontend/dist
 
 EXPOSE 7860

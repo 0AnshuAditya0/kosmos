@@ -15,7 +15,6 @@ MAX_AUDIO_BYTES = 12 * 1024 * 1024
 FRONTEND_DIST = "frontend/dist"
 
 INDEX_FILES = [
-    "model.onnx",
     "no_chunk.faiss",
     "no_chunk_meta.parquet"
 ]

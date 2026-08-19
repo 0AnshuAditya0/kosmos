@@ -14,3 +14,4 @@ sarvamai
 groq
 python-dotenv
 onnxruntime
+onnx
