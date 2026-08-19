@@ -16,11 +16,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Bake the serving model into the image. This avoids a hidden Hugging Face
 # download and a multi-second cold start when a container is first deployed.
 ENV HF_HOME=/opt/huggingface
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-m3')"
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')"
 
 COPY . .
 COPY --from=frontend-build /frontend/dist ./frontend/dist
 
 EXPOSE 7860
 
-CMD ["uvicorn", "app.server:app", "--host", "0.0.0.0", "--port", "7860", "--proxy-headers"]
+CMD ["sh", "-c", "uvicorn app.server:app --host 0.0.0.0 --port ${PORT:-7860} --proxy-headers"]

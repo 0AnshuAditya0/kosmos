@@ -15,7 +15,9 @@ MAX_AUDIO_BYTES = 12 * 1024 * 1024
 FRONTEND_DIST = "frontend/dist"
 
 INDEX_FILES = [
-    "no_chunk_bge.faiss", "no_chunk_bge_meta.parquet"
+    "model.onnx",
+    "no_chunk.faiss",
+    "no_chunk_meta.parquet"
 ]
 
 os.makedirs("index", exist_ok=True)
@@ -116,3 +118,9 @@ async def frontend():
 
 if os.path.isdir(FRONTEND_DIST):
     app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", "7860"))
+    uvicorn.run(app, host="0.0.0.0", port=port, proxy_headers=True)
