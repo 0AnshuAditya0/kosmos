@@ -19,23 +19,26 @@ INDEX_FILES = [
     "no_chunk_meta.parquet"
 ]
 
-os.makedirs("index", exist_ok=True)
 
-for filename in INDEX_FILES:
-    local_path = f"index/{filename}"
-    if not os.path.exists(local_path):
-        try:
-            downloaded = hf_hub_download(
-                repo_id="strelizi/kosmos-index",
-                repo_type="dataset",
-                filename=filename,
-                token=os.getenv("HF_TOKEN"),
-            )
-        except Exception as e:
-            print(f"failed downloading {filename}: {e}")
-            raise
-        import shutil
-        shutil.copy(downloaded, local_path)
+def _ensure_indexes():
+    import shutil
+    os.makedirs("index", exist_ok=True)
+    for filename in INDEX_FILES:
+        local_path = f"index/{filename}"
+        if not os.path.exists(local_path):
+            try:
+                downloaded = hf_hub_download(
+                    repo_id="strelizi/kosmos-index",
+                    repo_type="dataset",
+                    filename=filename,
+                    token=os.getenv("HF_TOKEN"),
+                )
+                shutil.copy(downloaded, local_path)
+                print(f"downloaded {filename}")
+            except Exception as e:
+                print(f"failed downloading {filename}: {e}")
+                raise
+
 
 allowed_origins = [
     origin.strip()
@@ -53,10 +56,8 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def preload_model():
-    from rag.fast_path import warm_fast_path
-    from rag.retriever import get_onnx_session
-    get_onnx_session()
-    warm_fast_path("no_chunk")
+    from fastapi.concurrency import run_in_threadpool
+    await run_in_threadpool(_ensure_indexes)
 
 
 def clean(obj):
