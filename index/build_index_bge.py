@@ -1,5 +1,8 @@
 import pandas as pd
 import numpy as np
+import os
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
 import faiss
 import torch
 from sentence_transformers import SentenceTransformer
@@ -7,7 +10,7 @@ from sentence_transformers import SentenceTransformer
 INPUT_PATH = "data/chunks_all.parquet"
 INDEX_DIR = "index"
 MODEL_NAME = "BAAI/bge-m3"
-BATCH_SIZE = 64
+BATCH_SIZE = 8
 
 
 def main():
