@@ -11,7 +11,7 @@ uvicorn
 python-multipart
 numpy
 sarvamai
-groq
 python-dotenv
 onnxruntime
 onnx
+hf_xet
