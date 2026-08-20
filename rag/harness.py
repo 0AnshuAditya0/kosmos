@@ -1,37 +1,27 @@
 import time
 
 from stt.sarvam_stt import transcribe
-from rag.generator import generate
-from rag.retriever import retrieve
 from rag.fast_path import retrieve_with_evidence, extract_verified_sentence
 
-from guardrails.checks import (
-    unsafe_input_check,
-    off_topic_check,
-    groundedness_check,
-)
-
-
-BEST_STRATEGY = "no_chunk"
+from guardrails.checks import unsafe_input_check
 
 
 def _with_retry(function, max_retries=2):
-    """
-    Retry a failing external call up to max_retries times.
-    """
-
     last_error = None
-
     for attempt in range(max_retries + 1):
         try:
             return function()
         except Exception as exc:
             last_error = exc
-
             if attempt == max_retries:
                 raise
-
     raise last_error
+
+CASCADE = [
+    ("no_chunk", False),
+    ("sentence_aware", False),
+    ("no_chunk_bge", True),
+]
 
 
 def _fast_answer_from_question(question: str, k: int = 5) -> dict:
@@ -48,13 +38,19 @@ def _fast_answer_from_question(question: str, k: int = 5) -> dict:
 
         retrieval_start = time.perf_counter()
 
-        chunks = retrieve_with_evidence(question, BEST_STRATEGY, k=k)
-        extraction = extract_verified_sentence(question, chunks)
+        chunks, extraction, tier_used = [], {"verified": False}, None
+        for strategy, is_bge in CASCADE:
+            chunks = retrieve_with_evidence(question, strategy, k=k, use_bge=is_bge)
+            extraction = extract_verified_sentence(question, chunks, use_bge=is_bge)
+            if extraction.get("verified"):
+                tier_used = strategy
+                break
 
         result["timing"]["retrieval_ms"] = round(
             (time.perf_counter() - retrieval_start) * 1000, 2
         )
         result["sources"] = chunks if extraction.get("verified") else []
+        result["tier"] = tier_used
 
         if not extraction.get("verified"):
             result["status"] = "off_topic"
@@ -73,74 +69,30 @@ def _fast_answer_from_question(question: str, k: int = 5) -> dict:
 
 def run(audio_bytes: bytes, k: int = 5) -> dict:
     start = time.perf_counter()
-
-    result = {
-        "answer": None,
-        "sources": [],
-        "status": "error",
-        "timing": {},
-    }
-
+    result = {"answer": None, "sources": [], "status": "error", "timing": {}}
     try:
-        # -------------------------
-        # 1. Speech to text
-        # -------------------------
         stt_start = time.perf_counter()
-
-        transcription = _with_retry(
-            lambda: transcribe(audio_bytes)
-        )
-
+        transcription = _with_retry(lambda: transcribe(audio_bytes))
         question = transcription["text"]
         language = transcription.get("language")
-
-        result["timing"]["stt_ms"] = round(
-            (time.perf_counter() - stt_start) * 1000,
-            2,
-        )
-        stt_ms = result["timing"]["stt_ms"]
-
-        result["question"] = question
-        result["language"] = language
+        stt_ms = round((time.perf_counter() - stt_start) * 1000, 2)
 
         fast_result = _fast_answer_from_question(question, k=k)
         result.update(fast_result)
         result["language"] = language
         result["timing"]["stt_ms"] = stt_ms
-        result["timing"]["total_ms"] = round(
-            (time.perf_counter() - start) * 1000, 2
-        )
-
+        result["timing"]["total_ms"] = round((time.perf_counter() - start) * 1000, 2)
     except Exception as exc:
         result["status"] = "error"
         result["error"] = str(exc)
-
-    result["timing"]["total_ms"] = round(
-        (time.perf_counter() - start) * 1000,
-        2,
-    )
-
     return result
 
+
 def run_from_text(question: str, k: int = 5) -> dict:
-    """
-    Same pipeline as run(), but for text input instead of audio.
-    Skips the STT stage entirely - used by the /ask-text fallback route
-    for when a user types instead of speaks (or when a mic isn't available).
-    """
     result = _fast_answer_from_question(question, k=k)
     result["timing"]["stt_ms"] = 0
     return result
 
 
 def run_extractive_from_text(question: str, k: int = 5) -> dict:
-    """
-    LLM-free pipeline: hybrid (dense + BM25) retrieval, then extractive
-    sentence selection - no Groq call, no network round trip beyond
-    retrieval itself. Much lower and more predictable latency than the
-    generative path, at the cost of less fluent answers (verbatim spans,
-    not composed sentences).
-    """
-    result = _fast_answer_from_question(question, k=k)
-    result["timing"]["stt_ms"] = 0
-    return result
+    return run_from_text(question, k=k)
