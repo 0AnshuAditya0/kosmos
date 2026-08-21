@@ -1,0 +1,15 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+gradio>=4.0.0
+fastapi
+uvicorn
+python-multipart
+pydantic
+numpy
+pandas
+pyarrow
+faiss-cpu
+huggingface_hub
+python-dotenv
+onnxruntime
+transformers
+sarvamai 

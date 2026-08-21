@@ -1,0 +1,121 @@
+language,query,status,tier,total_ms
+hin,कीमो के बजाय अंगूर खाने के क्या खतरे हैं,success,no_chunk,10253.5
+hin,बच्चों में मौखिक स्थिरीकरण क्या होता है,success,no_chunk,42.1
+hin,एम्ब्रेको निर्माण में,success,no_chunk,35.7
+hin,आपकी धमनियाँ कहाँ स्थित हैं,success,no_chunk,35.3
+hin,टिम्ब्रे की परिभाषा,success,sentence_aware,1027.3
+hin,कौन से अंग को कोरोनरी धमनियों द्वारा रक्त की आपूर्ति की जाती है,success,no_chunk,44.7
+hin,कौन सी काउंटी में फीनिक्स है अरिजोना,success,no_chunk,40.7
+hin,मोड़ने के बाद टखने कितने समय तक सूजा रहता है।,success,no_chunk,42.1
+hin,अल्जाइमर की शुरुआती उम्र क्या है,success,no_chunk,37.7
+hin,"गर्भपात के बाद कितना दर्द होता है, ऐसा कैसा लगता है।",success,no_chunk,41.1
+hin,कार्यात्मक व्यवहार विश्लेषण क्या है?,success,no_chunk,32.8
+hin,ब्रिस्टल सिटी के लिए मौसम क्या है,success,no_chunk,34.4
+hin,कौन गाता है यह गीत बस झूलता हुआ।,off_topic,,18135.0
+hin,क्या है सी.एफ.एम.ए.,success,no_chunk_bge,994.9
+hin,क्या तापमान प्रभाव चालकता करता है,success,no_chunk,41.4
+hin,जो पानी में घुलने पर अम्ल के रूप में व्यवहार करते हैं,success,no_chunk,49.2
+hin,अंतरालीय स्कंदन के कारण,success,no_chunk_bge,962.9
+hin,क्या है फ्रीक्वेंसी?,off_topic,,807.4
+hin,वाष्पीकरण कैसे काम करता है,success,no_chunk,38.1
+hin,जो समय की झुर्रियों में खेलता है,success,sentence_aware,88.3
+hin,हाईगेट कब्रिस्तान का पिशाच,success,no_chunk,46.8
+hin,पीटर बॉयल जॉन लेनन का सबसे अच्छा आदमी था।,success,no_chunk,40.3
+hin,मुक्केबाजी में ज़्यादातर नॉकआउट,success,no_chunk_bge,821.3
+hin,क्या आपको बेलीज़ के लिए टीकाकरण की आवश्यकता है?,success,no_chunk,38.9
+hin,एक विशिष्ट बाल संरक्षण समझौता क्या है,success,no_chunk,38.2
+hin,किसने लेक्स लूथर की भूमिका निभाई है?,success,no_chunk,38.8
+hin,निर्माण प्रक्रिया में किन समग्रों का उपयोग किया जाता है,success,no_chunk,37.7
+hin,प्रमाणित मेल भेजने की कीमत,success,no_chunk,48.8
+hin,ए.एम.सी. ओ.एन. एफ.आई.ओ.एस. क्या चैनल है,success,no_chunk,45.0
+hin,दक्षिण हृदय कहाँ है,success,no_chunk,33.2
+hin,अतिगतिकता का क्या अर्थ है,success,sentence_aware,93.8
+hin,डीट का क्या अर्थ है,success,no_chunk,37.3
+hin,प्रत्यारोपण के लिए क्या आवश्यक है,success,no_chunk,39.1
+hin,"वास्तविकता, परिभाषा",success,no_chunk,36.4
+hin,कोलेजन सप्लीमेंट्स यह काम करते हैं,success,sentence_aware,96.5
+hin,वायुकोष्ठिका के चारों ओर क्या होता है,success,no_chunk_bge,976.3
+hin,क्या है इक्विट्रैक कंसोल,success,no_chunk_bge,889.9
+hin,स्वर-समूह परिभाषा,success,no_chunk,37.2
+hin,महिलाओं को चक्कर आने का कारण क्या होता है।,success,no_chunk,37.8
+hin,वंशाणु अणु एक दूसरे के साथ कैसे जुड़ते हैं,success,no_chunk,42.2
+ben,কেমোর পরিবর্তে আঙুর খাওয়ার ঝুঁকিগুলো কী?,success,no_chunk,45.9
+ben,শিশুদের মধ্যে মুখের মাধ্যমে সমস্যা কী,success,no_chunk,37.3
+ben,অ্যামব্রেকো নির্মাণে,success,no_chunk_bge,865.4
+ben,আপনার ধমনীগুলি কোথায় অবস্থিত।,success,no_chunk,41.2
+ben,টিম্ব্রের সংজ্ঞা,success,sentence_aware,86.2
+ben,কোন অঙ্গটিতে করোনারি ধমনী থেকে রক্ত সরবরাহ করা হয়।,success,no_chunk,46.7
+ben,ফিনিক্স অ্যারিজোনা কোন কাউন্টি তা,success,sentence_aware,88.5
+ben,পেট ঘুরিয়ে দেওয়ার পর গোড়ালি কতক্ষণ ফুলে থাকে।,success,sentence_aware,102.4
+ben,আলঝাইমারের প্রাথমিক সূচনার বয়স কত,success,no_chunk,40.2
+ben,গর্ভপাতের ব্যথা কেমন লাগে।,success,no_chunk,43.0
+ben,কার্যকরী আচরণ বিশ্লেষণ কী?,success,no_chunk,41.6
+ben,ব্রিস্টল সিটির আবহাওয়া কেমন হবে।,success,no_chunk,39.4
+ben,গানটা কেউ কেউ শুধু সুইং করে গান করে।,off_topic,,906.7
+ben,সিএফএমএ কী?,success,no_chunk_bge,821.8
+ben,তাপমাত্রা পরিবাহিতা প্রভাব পরিচালনা করে।,success,no_chunk,40.8
+ben,যেগুলি জলে দ্রবীভূত হলে অ্যাসিড হিসাবে আচরণ করে।,success,no_chunk,42.8
+ben,আন্তঃস্থলীয় ঘনত্বের কারণসমূহ,success,no_chunk_bge,860.3
+ben,ফ্রিক কি?,success,no_chunk,33.1
+ben,বাষ্পীভবন কীভাবে কাজ করে,success,no_chunk,42.5
+ben,সময়ের কুঁচকে ওপর যারা খেলে।,success,sentence_aware,88.1
+ben,হাইগেট কবরস্থানের রক্তখেকো,success,no_chunk_bge,886.7
+ben,পিটার বয়েল ছিলেন জন লেননের সেরা লোক।,success,sentence_aware,97.9
+ben,বক্সিং-এ বেশিরভাগ নকআউট হলো,success,no_chunk_bge,845.3
+ben,বেলাইজের জন্য আপনার টিকাকরণের প্রয়োজন আছে কি?,success,no_chunk,38.5
+ben,সাধারণ শিশু হেফাজত চুক্তি কী?,success,no_chunk,43.2
+ben,কে লেক্স লুথার খেলেছে?,success,sentence_aware,83.3
+ben,বিল্ডিং প্রক্রিয়ায় এগ্রিগেটগুলি কী কী ব্যবহার করা হয়,success,no_chunk,42.7
+ben,প্রত্যয়িত মেইল পাঠানোর মূল্য,success,no_chunk,36.9
+ben,কী চ্যানরল হল এএমসি ওএন এফআইওএস,success,no_chunk,39.1
+ben,দক্ষিণ হৃদয় কোথায় আছে?,success,no_chunk,33.5
+ben,হাইপারমোবিলিটি মানে কী?,success,no_chunk_bge,860.0
+ben,ডিট মানে কী?,success,sentence_aware,87.3
+ben,প্রতিস্থাপনের জন্য কী প্রয়োজন,success,no_chunk,36.0
+ben,"বাস্তববাদ, সংজ্ঞা",success,no_chunk,34.8
+ben,কোলাজেন সম্পূরক এটি কাজ করে কিনা,success,no_chunk,46.1
+ben,অ্যালভিওলির চারপাশে কী আছে,success,no_chunk,38.1
+ben,ইকুইট্রাক কনসোল কী?,success,no_chunk_bge,900.3
+ben,কণ্ঠ সমষ্টির সংজ্ঞা,success,no_chunk,39.9
+ben,মহিলাদের মাথা ঘোরা কী কারণে হয়?,success,no_chunk_bge,815.3
+ben,প্রতিটি জিনের সঙ্গে কী ভাবে অণুবন্ধন হয়।,success,no_chunk_bge,869.5
+eng,largest refining companies in the us,success,no_chunk,44.8
+eng,what is stemix,success,no_chunk_bge,820.7
+eng,what is the regular gross revenue,success,no_chunk,36.0
+eng,what is alphasights,success,no_chunk,34.0
+eng,which point is a solution to the inequality shown in this graph?,success,no_chunk,41.6
+eng,what causes crossed eyes,success,no_chunk,38.4
+eng,what is garcinia used for,success,no_chunk,37.2
+eng,adverse effects of codeine,success,no_chunk,34.3
+eng,what does slainte mean?,success,no_chunk,35.7
+eng,define tuberosity,success,no_chunk,33.9
+eng,who were the founders of the naacp?,success,no_chunk_bge,858.8
+eng,the meaning of the medical term vasectomy is:,success,no_chunk,38.6
+eng,what modifier goes with children vaccines,success,sentence_aware,90.2
+eng,results of popcorn lung,success,no_chunk,34.8
+eng,paw patrol cast and crew,success,sentence_aware,90.5
+eng,types of wrist brace,success,no_chunk,35.7
+eng,why retention is important in the navy,success,no_chunk,39.4
+eng,what color is winnie the pooh shirt,success,no_chunk,40.5
+eng,medication freezer,success,no_chunk,35.2
+eng,average height of professional soccer player,success,sentence_aware,89.8
+eng,what is the concept of performance management,success,no_chunk,49.7
+eng,who is megan trainer engaged to,success,no_chunk_bge,818.3
+eng,maximum age for police academy,success,no_chunk,36.8
+eng,is the guinness world record challenge in huntsville al,success,no_chunk,40.9
+eng,how is mass conserved during chemical and physical change,success,no_chunk,37.8
+eng,which is one way that people benefit from equal treatment under the law?,success,no_chunk_bge,821.5
+eng,definition of awol,success,sentence_aware,98.5
+eng,different kind of kidney stones,success,no_chunk,37.8
+eng,how does the ancestry free trial work?,success,no_chunk,36.6
+eng,what is orthopaedic or,off_topic,,824.6
+eng,giDa delauran net worth,success,no_chunk,36.5
+eng,what is the proper way to use whey protein,success,no_chunk,37.0
+eng,why is the arc length in degrees,success,no_chunk,36.3
+eng,where is rib mountain located,success,no_chunk,36.9
+eng,in what year was texas' current constitution ratified,success,no_chunk,37.9
+eng,did bobby jones win the grand slam,success,sentence_aware,89.2
+eng,when is the redwoods marathon,success,no_chunk,35.7
+eng,is june a good time to go to yellowstone,success,no_chunk_bge,851.8
+eng,porter define,success,no_chunk,34.2
+eng,multilateral netting definition,success,no_chunk,35.2

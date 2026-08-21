@@ -1,0 +1,12 @@
+.venv
+venv
+env
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+bge_m3_onnx/
+*.onnx
+*.onnx_data
+onnx__*

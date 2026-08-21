@@ -1,0 +1,2 @@
+strategy,queries,recall_at_1,recall_at_5,recall_at_10,mrr
+no_chunk_bge,450,0.7133333333333334,0.8822222222222222,0.9,0.7807116402116402
