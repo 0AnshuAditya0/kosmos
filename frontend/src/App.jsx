@@ -2,108 +2,28 @@ import { useRef, useState } from "react";
 import "./App.css";
 
 const API_URL = import.meta.env.VITE_API_URL || "/ask";
-
-// Verified tonight against the real 3-tier cascade (no_chunk MiniLM ->
-// sentence_aware MiniLM -> no_chunk_bge BGE-M3) - see eval/results/
-// cascade_results.csv for the full test run these were picked from.
 const QUICK_CHECKS = [
-  { question: "কর্পোরেশন কী?", kind: "grounded", label: "Verified Bengali · Business" },
-  { question: "স্নেয়ার ড্রাম কী?", kind: "grounded", label: "Verified Bengali · Music" },
-  { question: "What is a corporation?", kind: "grounded", label: "Verified English · Business" },
-  { question: "टेस्ला कॉइल क्या है?", kind: "decline", label: "Expected decline · absent from index" },
+  { question: "কর্পোরেশন কী?", label: "Bengali / business" },
+  { question: "स्नেয়ार ड्रम क्या है?", label: "Hindi / music" },
+  { question: "What is a corporation?", label: "English / business" },
+  { question: "টেসলা কয়েল কী?", label: "Refusal path" },
 ];
+const NAV = ["Ask", "Evidence", "Retrieval", "Performance", "Safety", "System"];
 
-const NAV = ["Voice RAG", "Sources", "Performance", "About"];
-
-function Status({ result }) {
-  if (!result) return null;
-  const declined = result.status !== "success";
-  return <span className={`status ${declined ? "declined" : "grounded"}`}>
-    {declined ? "No verified context — declined" : "Grounded answer"}
-  </span>;
+function Mark({ inverse = false }) { return <span className={`mark ${inverse ? "mark-inverse" : ""}`} aria-hidden="true"><i /><i /><i /></span>; }
+function Header({ view, setView, landing = false }) {
+  return <header className={`site-header ${landing ? "landing-header" : ""}`}>
+    <button className="brand" onClick={() => setView("landing")} aria-label="Go to Kosmos home"><Mark inverse={landing} /><span>Kosmos<span className="brand-dot">/</span></span></button>
+    {!landing && <nav aria-label="Primary navigation">{NAV.map((item) => <button className={view === item ? "nav-active" : ""} key={item} onClick={() => setView(item)}>{item}</button>)}</nav>}
+    {landing ? <button className="header-link" onClick={() => setView("Ask")}>Open workspace <span>↗</span></button> : <span className="system-pill"><b /> API connected</span>}
+  </header>;
 }
-
-const TIER_LABELS = {
-  no_chunk: "Tier 1 · fast",
-  sentence_aware: "Tier 2 · fast",
-  no_chunk_bge: "Tier 3 · BGE-M3 (stronger multilingual model)",
-};
-
-function SourceList({ sources }) {
-  const [open, setOpen] = useState(false);
-  if (!sources?.length) return null;
-  return <section className="context">
-    <button className="context-toggle" onClick={() => setOpen(!open)}>
-      <span>▱ &nbsp; Retrieved context <b>{sources.length}</b></span><span>{open ? "⌃" : "⌄"}</span>
-    </button>
-    {open && <div className="source-list">
-      {sources.map((source, index) => <article className="source" key={`${source.chunk_id}-${index}`}>
-        <div>
-          <span className="source-number">{index + 1}</span>
-          <span>{{ hin: "Hindi", ben: "Bengali", eng: "English" }[source.language] || source.language}</span>
-          <span className="evidence">Lexical match {Math.round((source.lexical_score || 0) * 100)}%</span>
-        </div>
-        <p>{source.chunk_text}</p>
-      </article>)}
-    </div>}
-  </section>;
-}
-
-function VoicePage({ result, loading, submitText, recording, onMic, input, setInput }) {
-  const isLanding = !result && !loading;
-  return <main className="page voice-page">
-    {isLanding ? <section className="hero">
-      <div className="eye">◉</div>
-      <p className="eyebrow">VOICE-ENABLED, SOURCE-FIRST RETRIEVAL</p>
-      <h1>Ask with confidence.</h1>
-      <p className="lede">Kosmos returns a source sentence when it finds direct evidence — in Hindi, Bengali, or English — and declines when it does not.</p>
-      <div className="reviewer-box">
-        <div><b>Reviewer quick checks</b><span>Real indexed questions across all 3 languages, plus a deliberate refusal test</span></div>
-        <div className="check-grid">{QUICK_CHECKS.map((item) => <button key={item.question} className={`quick-check ${item.kind}`} onClick={() => submitText(item.question)}>
-          <span className="check-state">{item.kind === "grounded" ? "✓ Expected answer" : "× Expected decline"}</span><strong>{item.question}</strong><small>{item.label}</small>
-        </button>)}</div>
-      </div>
-    </section> : <section className="result-wrap">
-      <div className="steps"><span className="done">● Voice input</span><i /><span className="done">● Transcription</span><i /><span className="done">● Search</span><i /><span className={result ? "active" : ""}>● Verified answer</span></div>
-      {loading ? <div className="loading-card"><div className="pulse" /><b>Checking indexed evidence…</b><p>Fast tiers try first; a stronger model is used only if needed.</p></div> : <>
-        <div className="query-meta"><span>{result.question}</span><small>{result.language || "Text"} · {result.timing?.stt_ms ? "Voice" : "Typed"}</small></div>
-        <article className="answer-card"><header><span className="answer-label">ANSWER</span><Status result={result} /></header>
-          <p className="answer">{result.answer || "No answer — the system declined rather than guess."}</p>
-          <footer>
-            <b>Total {result.timing?.total_ms ?? "–"}ms</b>
-            <span>
-              {result.timing?.stt_ms ? `STT ${result.timing.stt_ms}ms (voice capture, not counted in P50/P70/P100) · ` : ""}
-              Retrieval {result.timing?.retrieval_ms ?? "–"}ms
-            </span>
-            {result.tier && <em>{TIER_LABELS[result.tier] || result.tier}</em>}
-          </footer>
-        </article>
-        <SourceList sources={result.sources} />
-      </>}
-    </section>}
-    <InputBar recording={recording} onMic={onMic} input={input} setInput={setInput} submitText={submitText} loading={loading} />
-  </main>;
-}
-
-function InputBar({ recording, onMic, input, setInput, submitText, loading }) {
-  return <div className="input-area"><div className="input-bar"><button className={`mic ${recording ? "recording" : ""}`} onClick={onMic} disabled={loading}>🎙</button><input value={input} disabled={loading || recording} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submitText(input)} placeholder="Ask in Hindi, Bengali, or English…" /><button className="send" disabled={!input.trim() || loading || recording} onClick={() => submitText(input)}>↑</button></div><small>{recording ? "Listening — tap again to submit" : "Tap to speak · text input available as fallback"}</small></div>;
-}
-
-function InfoPage({ page }) {
-  const content = {
-    Sources: <><h1>Sources</h1><p className="lede left">Kosmos searches a local multilingual passage index built from MSMARCO-XI. Answers are never composed beyond the retrieved source sentence.</p><div className="metrics"><Metric label="Indexed passages" value="60,000" /><Metric label="Languages" value="Hindi + Bengali + English" /><Metric label="Vector index" value="FAISS (2 models)" /></div><div className="info-card"><b>Evidence rule</b><p>A passage must contain direct content-term overlap with the user's question, in addition to semantic similarity. Semantic similarity alone is not enough to produce an answer — this is what stops confident-sounding but wrong matches.</p></div></>,
-    Performance: <><span className="target">ϟ REAL MEASURED LATENCY, WARM STATE</span><h1>Performance</h1><p className="lede left">No LLM call on the primary path. A 3-tier retrieval cascade tries the fastest option first and only escalates when needed.</p><div className="metrics"><Metric label="Overall P50" value="38.7 ms" /><Metric label="Tier 1/2 share" value="~84%" /><Metric label="Tier 3 (harder queries)" value="~800ms" /></div><div className="info-card"><b>Honest measurement</b><p>These numbers measure retrieval + verification after text is available. Voice input additionally includes Sarvam's network speech-to-text call, shown separately in each answer and not included in these percentiles, since it depends on network conditions outside this system's control.</p></div></>,
-    About: <><span className="target">HH GOA 2026</span><h1>A voice retrieval assistant that answers with evidence.</h1><p className="lede left">Kosmos turns Hindi, Bengali, and English questions into traceable, source-first answers with a deterministic refusal path and a tiered retrieval cascade.</p><div className="features"><Metric label="Voice-first" value="Sarvam STT" /><Metric label="Multilingual" value="Hindi + Bengali + English" /><Metric label="Grounded" value="Source sentence" /><Metric label="Fast path" value="No LLM by default" /></div></>,
-  };
-  return <main className="page info-page">{content[page]}</main>;
-}
-function Metric({ label, value }) { return <div className="metric"><small>{label}</small><strong>{value}</strong></div>; }
-
-export default function App() {
-  const [page, setPage] = useState("Voice RAG"), [result, setResult] = useState(null), [loading, setLoading] = useState(false), [recording, setRecording] = useState(false), [input, setInput] = useState("");
-  const recorder = useRef(null), chunks = useRef([]);
-  async function submitText(question) { if (!question?.trim()) return; setLoading(true); setResult(null); setInput(""); try { const response = await fetch(`${API_URL}-text-fast`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }) }); setResult(await response.json()); } catch (error) { setResult({ status: "error", question, error: String(error), timing: {} }); } finally { setLoading(false); } }
-  async function submitAudio() { const data = new FormData(); data.append("file", new Blob(chunks.current, { type: "audio/webm" }), "question.webm"); setLoading(true); setResult(null); try { const response = await fetch(API_URL, { method: "POST", body: data }); setResult(await response.json()); } catch (error) { setResult({ status: "error", error: String(error), timing: {} }); } finally { setLoading(false); } }
-  async function onMic() { if (recording) { recorder.current.stop(); recorder.current.stream.getTracks().forEach((track) => track.stop()); setRecording(false); return; } try { const stream = await navigator.mediaDevices.getUserMedia({ audio: true }); const current = new MediaRecorder(stream); chunks.current = []; current.ondataavailable = (event) => chunks.current.push(event.data); current.onstop = submitAudio; current.start(); recorder.current = current; setRecording(true); } catch { setResult({ status: "error", error: "Microphone access was denied.", timing: {} }); } }
-  return <div className="shell"><header><button className="brand" onClick={() => setPage("Voice RAG")}>◉ <b>Kosmos</b></button><nav>{NAV.map((item) => <button className={page === item ? "selected" : ""} key={item} onClick={() => setPage(item)}>{item}</button>)}</nav><span className="ready">● System ready</span></header>{page === "Voice RAG" ? <VoicePage {...{ result, loading, submitText, recording, onMic, input, setInput }} /> : <InfoPage page={page} />}</div>;
-}
+function AbstractOrbit() { return <div className="orbit-art" aria-hidden="true"><div className="orbit orbit-a" /><div className="orbit orbit-b" /><div className="orbit orbit-c" /><div className="orbit-core"><Mark /></div><span className="orbit-label label-a">VOICE</span><span className="orbit-label label-b">SOURCE</span><span className="orbit-label label-c">TRUST</span></div>; }
+function Landing({ setView }) { return <div className="landing"><Header setView={setView} landing /><main className="landing-main"><div className="landing-copy"><p className="kicker">A SOURCE-FIRST VOICE INTERFACE</p><h1>Make every answer<br /><em>traceable.</em></h1><p className="landing-lede">Kosmos listens across Hindi, Bengali, and English — then returns only what the source can support.</p><div className="landing-actions"><button className="primary-button" onClick={() => setView("Ask")}>Enter Kosmos <span>→</span></button><span className="action-note">No guesswork. No hidden generation.</span></div></div><AbstractOrbit /></main><footer className="landing-footer"><span>Multilingual retrieval / 2026</span><span>Built for evidence, not confidence theater</span></footer></div>; }
+function Status({ result }) { if (!result) return null; const status = result.status; return <span className={`result-status ${status === "success" ? "success" : "declined"}`}><b />{status === "success" ? "Verified against source" : status === "error" ? "Connection error" : "Insufficient evidence — declined"}</span>; }
+function Composer({ input, setInput, submitText, recording, onMic, loading }) { return <div className="composer-wrap"><div className="composer"><button className={`mic-button ${recording ? "is-recording" : ""}`} onClick={onMic} disabled={loading} aria-label={recording ? "Stop recording" : "Start voice recording"}>{recording ? "■" : "◌"}</button><input value={input} disabled={loading || recording} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229 && submitText(input)} placeholder="Ask a question in any supported language" /><button className="send-button" disabled={!input.trim() || loading || recording} onClick={() => submitText(input)} aria-label="Submit question">↑</button></div><small>{recording ? "Listening — press the square to submit" : "Press enter to search · voice input available"}</small></div>; }
+function QuickChecks({ submitText }) { return <section className="quick-panel"><div className="panel-heading"><div><span className="section-index">01</span><h2>Start with a known signal</h2></div><p>Quick checks from the indexed multilingual set</p></div><div className="quick-grid">{QUICK_CHECKS.map((check, index) => <button className={`quick-card ${index === 3 ? "refusal" : ""}`} key={check.question} onClick={() => submitText(check.question)}><span>{index === 3 ? "REFUSAL TEST" : "INDEXED QUESTION"}</span><strong>{check.question}</strong><small>{check.label} <b>↗</b></small></button>)}</div></section>; }
+function SourceList({ sources }) { const [open, setOpen] = useState(true); if (!sources?.length) return null; return <section className="evidence-panel"><button className="evidence-toggle" onClick={() => setOpen(!open)}><span><i /> Retrieved evidence <b>{sources.length}</b></span><span>{open ? "−" : "+"}</span></button>{open && <div className="sources">{sources.map((source, index) => <article className="source" key={`${source.chunk_id}-${index}`}><div className="source-meta"><span>0{index + 1}</span><span>{source.language || "source"}</span><span>lexical match {Math.round((source.lexical_score || 0) * 100)}%</span></div><p>{source.chunk_text}</p></article>)}</div>}</section>; }
+function AskView({ result, loading, submitText, recording, onMic, input, setInput }) { return <main className="workspace page"><div className="workspace-intro"><div><p className="kicker">KOSMOS / ASK</p><h1>What do you want to verify?</h1></div><p>Ask naturally. Kosmos searches the source layer first and refuses when evidence is missing.</p></div>{!result && !loading ? <QuickChecks submitText={submitText} /> : <section className="answer-area">{loading ? <div className="loading-state"><span className="spinner" /><p>Running the retrieval cascade<span className="blink">...</span></p><small>Fast lexical match → multilingual rerank → evidence check</small></div> : <><div className="query-line"><span>QUERY</span><strong>{result.question || "Voice query"}</strong><Status result={result} /></div><article className={`answer-panel ${result.status !== "success" ? "answer-refusal" : ""}`}><span className="answer-overline">{result.status === "success" ? "SOURCE-SUPPORTED ANSWER" : "SAFE COMPLETION"}</span><p>{result.answer || "Kosmos could not find direct evidence for this question, so it declined to answer."}</p><div className="answer-stats"><span>total {result.timing?.total_ms ?? "—"} ms</span><span>retrieval {result.timing?.retrieval_ms ?? "—"} ms</span>{result.tier && <span>{result.tier}</span>}</div></article><SourceList sources={result.sources} /></>}</section>}<Composer {...{ input, setInput, submitText, recording, onMic, loading }} /></main>; }
+function InfoView({ view }) { const data = { Evidence: ["Evidence is the product.", "Every answer is anchored to a retrieved passage and checked for direct content overlap before it reaches you.", ["Source sentence", "Lexical verification", "Deterministic refusal"]], Retrieval: ["A cascade, not a black box.", "Kosmos starts with a fast multilingual index and escalates only when a question needs a stronger read.", ["Fast path / MiniLM", "Aware path / sentence context", "Deep path / BGE-M3"]], Performance: ["Fast where it matters.", "The first two retrieval tiers handle the common path. Deeper matching is reserved for harder multilingual queries.", ["38.7ms / measured P50", "84% / fast tier share", "~800ms / deep tier"]], Safety: ["Confidence is not evidence.", "When the index cannot support a question, Kosmos says so. This refusal path is intentional — and visible.", ["No fabricated answers", "Source overlap required", "Refusal is a feature"]], System: ["A small, legible system.", "Voice capture, retrieval, and verification are separated so every step can be inspected.", ["Sarvam / speech to text", "FAISS / vector search", "Kosmos / evidence gate"]] }; const [title, copy, items] = data[view]; return <main className="info-view page"><p className="kicker">KOSMOS / {view.toUpperCase()}</p><h1>{title}</h1><p className="info-copy">{copy}</p><div className="info-grid">{items.map((item, index) => <div className="info-item" key={item}><span>0{index + 1}</span><strong>{item}</strong><i>↗</i></div>)}</div><div className="abstract-note"><span className="section-index">/ / /</span><p>Designed to keep the distance between a question and its evidence as small as possible.</p></div></main>; }
+export default function App() { const [view, setView] = useState("landing"), [result, setResult] = useState(null), [loading, setLoading] = useState(false), [recording, setRecording] = useState(false), [input, setInput] = useState(""); const recorder = useRef(null); const chunks = useRef([]); async function submitText(question) { if (!question?.trim()) return; setLoading(true); setResult(null); setInput(""); try { const response = await fetch(`${API_URL}-text-fast`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }) }); setResult(await response.json()); } catch (error) { setResult({ status: "error", question, answer: "The retrieval service is unavailable right now.", error: String(error), timing: {} }); } finally { setLoading(false); } } async function submitAudio() { const data = new FormData(); data.append("file", new Blob(chunks.current, { type: "audio/webm" }), "question.webm"); setLoading(true); setResult(null); try { const response = await fetch(API_URL, { method: "POST", body: data }); setResult(await response.json()); } catch (error) { setResult({ status: "error", answer: "The voice service is unavailable right now.", error: String(error), timing: {} }); } finally { setLoading(false); } } async function onMic() { if (recording) { recorder.current.stop(); recorder.current.stream.getTracks().forEach((track) => track.stop()); setRecording(false); return; } try { const stream = await navigator.mediaDevices.getUserMedia({ audio: true }); const current = new MediaRecorder(stream); chunks.current = []; current.ondataavailable = (event) => chunks.current.push(event.data); current.onstop = submitAudio; current.start(); recorder.current = current; setRecording(true); } catch { setResult({ status: "error", answer: "Microphone access was denied.", timing: {} }); } } if (view === "landing") return <Landing setView={setView} />; return <div className="app-shell"><Header view={view} setView={(next) => { setResult(null); setView(next); }} />{view === "Ask" ? <AskView {...{ result, loading, submitText, recording, onMic, input, setInput }} /> : <InfoView view={view} />}</div>; }
