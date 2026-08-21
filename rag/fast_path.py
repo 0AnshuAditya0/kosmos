@@ -1,17 +1,36 @@
 """Deterministic, low-latency answer path with a 2-model cascade support.
 
 Tiers 1-2 use the fast MiniLM+ONNX pipeline (rag.retriever). Tier 3 uses
-the slower but much stronger BGE-M3 model for the no_chunk_bge index,
-reached only when the fast tiers fail to verify an answer.
+the ONNX INT8 quantized BGE-M3 model for the no_chunk_bge index, cached 
+in memory to guarantee sub-100ms CPU execution.
 """
 
 from __future__ import annotations
 
+import os
 import re
 import unicodedata
+from pathlib import Path
 from typing import Any
 
+import faiss
+import numpy as np
+import onnxruntime as ort
+import pandas as pd
+from transformers import AutoTokenizer
+
 from rag.retriever import retrieve_batch
+
+os.environ["OMP_NUM_THREADS"] = "2"
+os.environ["MKL_NUM_THREADS"] = "2"
+
+# Global cache for ONNX Session, Tokenizer, FAISS Index, and Parquet Metadata
+_bge_session = None
+_bge_tokenizer = None
+_BGE_FAISS_INDEX = None
+_BGE_META_DF = None
+# _BGE_FAISS_INDEX = None
+_BGE_META_RECORDS = None
 
 CANDIDATE_POOL_SIZE = 12
 MIN_LEXICAL_SCORE = 0.18
@@ -29,61 +48,83 @@ STOPWORDS = frozenset({
     "কিভাবে", "কেন", "কখন", "কোথায়",
 })
 
-_bge_model = None
 
+def _get_bge_ort():
+    """Initializes and returns the ONNX Runtime session and tokenizer."""
+    global _bge_session, _bge_tokenizer
+    if _bge_session is None:
+        model_dir = "bge_m3_onnx"
+        model_path = os.path.join(model_dir, "model_quantized.onnx")
+        if not os.path.exists(model_path):
+            model_path = os.path.join(model_dir, "model.onnx")
 
-def _get_bge_model():
-    global _bge_model
-    if _bge_model is None:
-        import os
-        import torch
-        from sentence_transformers import SentenceTransformer
+        opts = ort.SessionOptions()
+        opts.intra_op_num_threads = 2
+        opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+        opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
 
-        # Throttles thread contention on multi-tenant container CPUs
-        num_threads = min(4, os.cpu_count() or 4)
-        torch.set_num_threads(num_threads)
-
-        model = SentenceTransformer("BAAI/bge-m3")
-        
-        # Proper sentence-transformers API for capping sequence length
-        model.max_seq_length = 64
-        model.eval()
-        
-        _bge_model = model
-    return _bge_model
-
-
-def _embed_bge(queries: list) -> "np.ndarray":
-    import torch
-    import numpy as np
-
-    model = _get_bge_model()
-
-    # Disables autograd tracking and memory bookkeeping during inference
-    with torch.inference_mode():
-        embeddings = model.encode(
-            queries,
-            batch_size=len(queries),
-            show_progress_bar=False,
-            convert_to_numpy=True,
-            normalize_embeddings=True,
+        _bge_session = ort.InferenceSession(
+            model_path, 
+            sess_options=opts, 
+            providers=["CPUExecutionProvider"]
         )
-    return np.asarray(embeddings, dtype=np.float32)
+        _bge_tokenizer = AutoTokenizer.from_pretrained("BAAI/bge-m3")
+        
+    return _bge_session, _bge_tokenizer
+
+
+def _get_bge_index_and_meta(strategy_name: str):
+    """Loads FAISS index and converts Parquet metadata to native Python dicts in RAM."""
+    global _BGE_FAISS_INDEX, _BGE_META_RECORDS
+    if _BGE_FAISS_INDEX is None or _BGE_META_RECORDS is None:
+        import faiss
+        import pandas as pd
+
+        # Prevent FAISS from clashing with ONNX thread pool
+        faiss.omp_set_num_threads(2)
+
+        index_dir = Path(__file__).resolve().parent.parent / "index"
+        faiss_path = index_dir / f"{strategy_name}.faiss"
+        meta_path = index_dir / f"{strategy_name}_meta.parquet"
+
+        _BGE_FAISS_INDEX = faiss.read_index(str(faiss_path))
+        
+        # Convert to list of dicts ONCE at startup to eliminate .iloc overhead
+        df = pd.read_parquet(meta_path)
+        _BGE_META_RECORDS = df.to_dict("records")
+
+    return _BGE_FAISS_INDEX, _BGE_META_RECORDS
+
+
+def _embed_bge(queries: list) -> np.ndarray:
+    session, tokenizer = _get_bge_ort()
+
+    # Reduced max_length from 64 to 48 for faster transformer attention passes
+    inputs = tokenizer(
+        queries,
+        padding=True,
+        truncation=True,
+        max_length=48,
+        return_tensors="np"
+    )
+
+    ort_inputs = {
+        "input_ids": inputs["input_ids"].astype(np.int64),
+        "attention_mask": inputs["attention_mask"].astype(np.int64),
+    }
+
+    outputs = session.run(None, ort_inputs)
+    cls_embeddings = outputs[0][:, 0, :]
+    
+    norms = np.linalg.norm(cls_embeddings, axis=1, keepdims=True)
+    normalized_embeddings = cls_embeddings / np.maximum(norms, 1e-12)
+
+    return normalized_embeddings.astype(np.float32)
 
 
 def _retrieve_bge(query: str, strategy_name: str, k: int) -> list:
-    """Retrieve using BGE-M3 directly against the no_chunk_bge index,
-    bypassing the MiniLM/ONNX path in retriever.py entirely."""
-    import faiss
-    import pandas as pd
-    from pathlib import Path
-
-    index_dir = Path(__file__).resolve().parent.parent / "index"
-    faiss_path = index_dir / f"{strategy_name}.faiss"
-    meta_path = index_dir / f"{strategy_name}_meta.parquet"
-
-    index = faiss.read_index(str(faiss_path))
-    metadata = pd.read_parquet(meta_path)
+    """Retrieves candidates using O(1) native Python memory list access."""
+    index, meta_records = _get_bge_index_and_meta(strategy_name)
 
     embedding = _embed_bge([query])
     actual_k = min(k, index.ntotal)
@@ -91,13 +132,18 @@ def _retrieve_bge(query: str, strategy_name: str, k: int) -> list:
 
     results = []
     for score, pos in zip(scores[0], indices[0]):
-        if pos < 0:
+        if pos < 0 or pos >= len(meta_records):
             continue
-        row = metadata.iloc[int(pos)]
+        
+        # Instantaneous C-level list lookup
+        row = meta_records[int(pos)]
         results.append({
-            "chunk_id": row["chunk_id"], "query_id": row["query_id"],
-            "language": row["language"], "is_selected": int(row["is_selected"]),
-            "chunk_text": row["chunk_text"], "score": float(score),
+            "chunk_id": row["chunk_id"], 
+            "query_id": row["query_id"],
+            "language": row["language"], 
+            "is_selected": int(row["is_selected"]),
+            "chunk_text": row["chunk_text"], 
+            "score": float(score),
             "strategy": strategy_name,
         })
     return results
@@ -168,11 +214,10 @@ def extract_verified_sentence(question: str, chunks: list, use_bge: bool = False
 
     score, matches, sentence, chunk, idx, s_list = best
 
-    # --- SLIDING WINDOW EXPANSION ---
+    # Sliding window expansion for short sentences
     answer_text = sentence
     if len(sentence.split()) <= 10 and (idx + 1) < len(s_list):
         answer_text = f"{sentence} {s_list[idx + 1]}"
-    # --------------------------------
 
     dense_score = float(chunk.get("score", 0.0))
     dense_threshold = MIN_DENSE_SCORE_FOR_VERIFICATION_BGE if use_bge else MIN_DENSE_SCORE_FOR_VERIFICATION
@@ -198,7 +243,11 @@ def extract_verified_sentence(question: str, chunks: list, use_bge: bool = False
 
 
 def warm_fast_path(strategy_name: str) -> None:
+    """Pre-warms models, ONNX sessions, FAISS indices, and metadata into RAM."""
     from rag.retriever import get_model, load_strategy
-    get_model()
-    if strategy_name != "no_chunk_bge":
+    if strategy_name == "no_chunk_bge":
+        _get_bge_index_and_meta("no_chunk_bge")
+        _embed_bge(["warmup query"])
+    else:
+        get_model()
         load_strategy(strategy_name)

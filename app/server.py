@@ -9,6 +9,7 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from huggingface_hub import hf_hub_download
 
+
 from rag.harness import run, run_from_text
 
 app = FastAPI()
@@ -56,13 +57,13 @@ def normalize_key(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip().lower())
 
 @app.on_event("startup")
-async def preload():
+async def startup_event():
     from rag.fast_path import warm_fast_path
-    print("Warming Tier 1 (no_chunk)...")
+    print("Pre-warming Tier 1, 2, and Tier 3 ONNX BGE-M3...")
     warm_fast_path("no_chunk")
-    print("Warming Tier 2 (sentence_aware)...")
     warm_fast_path("sentence_aware")
-    print("Startup warmup complete. Tier 3 (BGE-M3) will load on first use.")
+    warm_fast_path("no_chunk_bge")
+    print("All tiers warm in RAM!")
 
 def clean(obj):
     """Recursively convert numpy/NaN types to plain JSON-safe types."""
