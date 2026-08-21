@@ -1,11 +1,3 @@
-FROM node:22-alpine AS frontend-build
-
-WORKDIR /frontend
-COPY frontend/package*.json ./
-RUN npm ci
-COPY frontend/ ./
-RUN npm run build
-
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -13,14 +5,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Bake the serving model and compile to ONNX inside the image.
-ENV HF_HOME=/opt/huggingface
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')"
-
 COPY . .
-RUN python index/export_onnx.py
-COPY --from=frontend-build /frontend/dist ./frontend/dist
 
 EXPOSE 7860
 
-CMD ["sh", "-c", "uvicorn app.server:app --host 0.0.0.0 --port ${PORT:-7860} --proxy-headers"]
+CMD uvicorn app.server:app --host 0.0.0.0 --port ${PORT:-7860}

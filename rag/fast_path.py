@@ -87,12 +87,6 @@ def _retrieve_bge(query: str, strategy_name: str, k: int) -> list:
 
 
 def _tokens(text: str) -> set:
-    # \w+ is unreliable for Bengali/Devanagari: combining vowel signs and
-    # virama/hasant characters can fall outside \w's definition, causing
-    # \w+ to fragment a single syllable into multiple tiny pieces (or drop
-    # it entirely once len(t)>1 filters the fragments out). Splitting on
-    # whitespace and stripping surrounding punctuation keeps each real word
-    # intact regardless of script.
     text = unicodedata.normalize("NFC", text)
     words = re.split(r"\s+", text.strip())
     tokens = set()
@@ -142,26 +136,34 @@ def extract_verified_sentence(question: str, chunks: list, use_bge: bool = False
     best = None
 
     for chunk in chunks[:3]:
-        for sentence in _sentences(chunk.get("chunk_text", "")):
+        s_list = _sentences(chunk.get("chunk_text", ""))
+        for idx, sentence in enumerate(s_list):
             if _normalize(sentence) == question_normalized:
                 continue
             coverage, matches = _lexical_score(question_tokens, sentence)
             score = coverage + 0.10 * float(chunk["score"])
-            candidate = (score, matches, sentence, chunk)
+            candidate = (score, matches, sentence, chunk, idx, s_list)
             if best is None or candidate[0] > best[0]:
                 best = candidate
 
     if best is None:
         return {"answer": None, "source_chunk_id": None, "confidence": 0.0, "verified": False}
 
-    score, matches, sentence, chunk = best
+    score, matches, sentence, chunk, idx, s_list = best
+
+    # --- SLIDING WINDOW EXPANSION ---
+    answer_text = sentence
+    if len(sentence.split()) <= 10 and (idx + 1) < len(s_list):
+        answer_text = f"{sentence} {s_list[idx + 1]}"
+    # --------------------------------
+
     dense_score = float(chunk.get("score", 0.0))
     dense_threshold = MIN_DENSE_SCORE_FOR_VERIFICATION_BGE if use_bge else MIN_DENSE_SCORE_FOR_VERIFICATION
 
     definitional_ok = True
     if len(question_tokens) == 1:
         term = next(iter(question_tokens))
-        prefix = _normalize(sentence)[:40]
+        prefix = _normalize(answer_text)[:40]
         definitional_ok = term in prefix
 
     verified = (
@@ -171,7 +173,7 @@ def extract_verified_sentence(question: str, chunks: list, use_bge: bool = False
         and definitional_ok
     )
     return {
-        "answer": sentence if verified else None,
+        "answer": answer_text if verified else None,
         "source_chunk_id": chunk.get("chunk_id") if verified else None,
         "confidence": round(score, 3),
         "verified": verified,
