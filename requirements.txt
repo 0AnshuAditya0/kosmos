@@ -1,5 +1,5 @@
---extra-index-url https://download.pytorch.org/whl/cpu
-gradio>=4.0.0
+gradio>=4.28.0
+huggingface_hub>=0.23.0
 fastapi
 uvicorn
 python-multipart
@@ -8,8 +8,7 @@ numpy
 pandas
 pyarrow
 faiss-cpu
-huggingface_hub
 python-dotenv
 onnxruntime
 transformers
-sarvamai 
+sarvamai
