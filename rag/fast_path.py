@@ -35,22 +35,39 @@ _bge_model = None
 def _get_bge_model():
     global _bge_model
     if _bge_model is None:
-        from sentence_transformers import SentenceTransformer
+        import os
         import torch
-        _bge_model = SentenceTransformer("BAAI/bge-m3")
-        if torch.cuda.is_available():
-            _bge_model = _bge_model.half()
-        _bge_model.eval()
+        from sentence_transformers import SentenceTransformer
+
+        # Throttles thread contention on multi-tenant container CPUs
+        num_threads = min(4, os.cpu_count() or 4)
+        torch.set_num_threads(num_threads)
+
+        model = SentenceTransformer("BAAI/bge-m3")
+        
+        # Proper sentence-transformers API for capping sequence length
+        model.max_seq_length = 64
+        model.eval()
+        
+        _bge_model = model
     return _bge_model
 
 
 def _embed_bge(queries: list) -> "np.ndarray":
+    import torch
     import numpy as np
+
     model = _get_bge_model()
-    embeddings = model.encode(
-        queries, batch_size=8, show_progress_bar=False,
-        convert_to_numpy=True, normalize_embeddings=True,
-    )
+
+    # Disables autograd tracking and memory bookkeeping during inference
+    with torch.inference_mode():
+        embeddings = model.encode(
+            queries,
+            batch_size=len(queries),
+            show_progress_bar=False,
+            convert_to_numpy=True,
+            normalize_embeddings=True,
+        )
     return np.asarray(embeddings, dtype=np.float32)
 
 

@@ -1,15 +1,7 @@
-"""
-server.py
-Final production backend for Kosmos - 3-tier cascade RAG
-(no_chunk MiniLM -> sentence_aware MiniLM -> no_chunk_bge BGE-M3).
-
-Downloads only the 3 index files this architecture actually uses.
-BGE-M3 itself is NOT downloaded here - sentence-transformers pulls it
-automatically the first time Tier 3 is actually needed (lazy load), so
-most container restarts never pay that cost unless a real Tier-3 query
-comes in.
-"""
 import os
+import re
+import asyncio
+import unicodedata
 import numpy as np
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,6 +13,10 @@ from rag.harness import run, run_from_text
 
 app = FastAPI()
 MAX_AUDIO_BYTES = 12 * 1024 * 1024
+
+# In-memory query cache for sub-2ms repeated query hits
+QUERY_CACHE = {}
+MAX_CACHE_SIZE = 1000
 
 INDEX_FILES = [
     "no_chunk.faiss", "no_chunk_meta.parquet",
@@ -55,22 +51,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def normalize_key(text: str) -> str:
+    text = unicodedata.normalize("NFC", text)
+    return re.sub(r"\s+", " ", text.strip().lower())
 
 @app.on_event("startup")
 async def preload():
-    """
-    Warm Tier 1 and Tier 2 (fast, cheap) at startup so the first real
-    request doesn't pay model-load cost. Tier 3 (BGE-M3, ~2.3GB) is
-    deliberately NOT warmed here - it loads lazily only if a query
-    actually needs it, keeping baseline memory low.
-    """
     from rag.fast_path import warm_fast_path
     print("Warming Tier 1 (no_chunk)...")
     warm_fast_path("no_chunk")
     print("Warming Tier 2 (sentence_aware)...")
     warm_fast_path("sentence_aware")
     print("Startup warmup complete. Tier 3 (BGE-M3) will load on first use.")
-
 
 def clean(obj):
     """Recursively convert numpy/NaN types to plain JSON-safe types."""
@@ -87,11 +79,9 @@ def clean(obj):
         return None
     return obj
 
-
 @app.get("/health")
 async def health():
     return {"status": "ok", "mode": "3-tier-cascade-extractive"}
-
 
 @app.post("/ask")
 async def ask(file: UploadFile):
@@ -109,14 +99,7 @@ class TextQuestion(BaseModel):
 
 
 @app.post("/ask-text")
-async def ask_text(payload: TextQuestion):
-    result = await run_in_threadpool(run_from_text, payload.question)
-    return clean(result)
-
-
 @app.post("/ask-text-fast")
 async def ask_text_fast(payload: TextQuestion):
-    # Same cascade - kept as a separate route name for compatibility with
-    # the existing frontend, which calls this endpoint for typed questions.
     result = await run_in_threadpool(run_from_text, payload.question)
     return clean(result)
