@@ -43,14 +43,19 @@ except Exception as exc:
     raise
 
 # --- 2. THE ACTUAL QUERY-PROCESSING FUNCTION - THIS is what needs GPU ---
-# @spaces.GPU grants ephemeral GPU access for the duration of this call.
-# All model loading (MiniLM, BGE-M3) happens lazily INSIDE rag.harness's
-# call chain, only when this function runs - required for ZeroGPU, since
-# CUDA context is only valid inside the decorated function's execution.
+# @spaces.GPU must decorate the function DIRECTLY wired to the Gradio
+# interface (the .click(fn=...) target) - HF's ZeroGPU detector appears to
+# only recognize the decorator on the function actually attached to an
+# event handler, not one called indirectly through a wrapper.
 @spaces.GPU(duration=30)
-def process_question(question: str) -> dict:
+def answer_question(question: str):
     from rag.harness import run_from_text
-    return run_from_text(question)
+    res = run_from_text(question)
+    answer = res.get("answer") or "No answer verified."
+    tier = res.get("tier", "N/A")
+    timing = res.get("timing", {}).get("retrieval_ms", 0)
+    status_str = f"**Tier Used:** {tier} | **Retrieval Latency:** {timing:.1f} ms"
+    return answer, status_str
 
 
 # --- 3. FASTAPI SETUP ---
@@ -67,22 +72,13 @@ class TextQuestion(BaseModel):
 
 @fastapi_app.post("/ask-text-fast")
 async def ask_text_fast(payload: TextQuestion):
-    result = await run_in_threadpool(process_question, payload.question)
+    from rag.harness import run_from_text
+    result = await run_in_threadpool(run_from_text, payload.question)
     return result
 
 @fastapi_app.get("/health")
 async def health():
     return {"status": "ok"}
-
-
-# --- 4. GRADIO UI (uses the SAME decorated function) ---
-def answer_question(question: str):
-    res = process_question(question)
-    answer = res.get("answer") or "No answer verified."
-    tier = res.get("tier", "N/A")
-    timing = res.get("timing", {}).get("retrieval_ms", 0)
-    status_str = f"**Tier Used:** {tier} | **Retrieval Latency:** {timing:.1f} ms"
-    return answer, status_str
 
 
 with gr.Blocks() as demo:
