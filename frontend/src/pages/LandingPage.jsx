@@ -6,6 +6,7 @@ export default function LandingPage({ setView, nav }) {
             <Header setView={setView} landing NAV={nav} />
             <main className="landing-main">
                 <div className="landing-copy">
+                    <p className="kicker">#RAGInGoa</p>
                     <h1>
                         Make every answer
                         <br />
