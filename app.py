@@ -32,16 +32,22 @@ ensure_indexes()
 def _format_result(res, transcribed_question=None, detected_language=None):
     answer = res.get("answer") or "No answer verified — the system declined rather than guess."
     tier = res.get("tier", "N/A")
-    timing = res.get("timing", {}).get("retrieval_ms", 0)
-    stt_ms = res.get("timing", {}).get("stt_ms", 0)
+    timing = res.get("timing", {})
+    retrieval_ms = timing.get("retrieval_ms", 0) or 0
+    stt_ms = timing.get("stt_ms", 0) or 0
+    total_ms = stt_ms + retrieval_ms
 
-    status_lines = [f"**Tier used:** {tier}  |  **Retrieval latency:** {timing:.1f} ms"]
+    status_lines = []
     if transcribed_question:
         status_lines.append(f"**Transcribed question:** {transcribed_question}")
     if detected_language:
         status_lines.append(f"**Detected language:** {detected_language}")
-    if stt_ms:
-        status_lines.append(f"*(STT: {stt_ms:.1f}ms — voice capture time, not counted in retrieval latency above)*")
+
+    status_lines.append(f"**Tier used:** {tier}")
+    status_lines.append(
+        f"**STT:** {stt_ms:.1f} ms  +  **Retrieval:** {retrieval_ms:.1f} ms  "
+        f"=  **Total:** {total_ms:.1f} ms"
+    )
 
     return answer, "\n\n".join(status_lines)
 
