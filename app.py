@@ -61,7 +61,7 @@ def answer_question(question: str):
     status_str = f"**Tier Used:** {tier} | **Retrieval Latency:** {timing:.1f} ms"
     return answer, status_str
 
-with gr.Blocks(theme=gr.themes.Soft()) as demo:
+with gr.Blocks() as demo:
     gr.Markdown("# ⚡ Tiered Cascade RAG")
     
     with gr.Row():
