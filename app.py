@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from huggingface_hub import hf_hub_download
+import spaces
 
 # --- 1. IDEMPOTENT INDEX DOWNLOAD ---
 INDEX_FILES = [
@@ -49,7 +50,7 @@ async def ask_text_fast(payload: TextQuestion):
     result = await run_in_threadpool(run_from_text, payload.question)
     return result
 
-# --- 3. GRADIO UI ---
+@spaces.GPU
 def answer_question(question: str):
     from rag.harness import run_from_text
     res = run_from_text(question)
