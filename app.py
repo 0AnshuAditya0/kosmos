@@ -21,16 +21,26 @@ def ensure_indexes():
     for filename in INDEX_FILES:
         local_path = f"index/{filename}"
         if not os.path.exists(local_path):
-            print(f"Downloading {filename} from HF Hub...")
-            downloaded = hf_hub_download(
-                repo_id="strelizi/kosmos-index",
-                repo_type="dataset",
-                filename=filename,
-                token=token,
-            )
-            shutil.copy(downloaded, local_path)
+            try:
+                print(f"Downloading {filename} from HF Hub...")
+                downloaded = hf_hub_download(
+                    repo_id="strelizi/kosmos-index",
+                    repo_type="dataset",
+                    filename=filename,
+                    token=token,
+                )
+                shutil.copy(downloaded, local_path)
+                print(f"  -> saved {filename}")
+            except Exception as exc:
+                print(f"  !! FAILED to download {filename}: {exc}")
+                raise
 
-ensure_indexes()
+try:
+    ensure_indexes()
+    print("All indexes ready.")
+except Exception as exc:
+    print(f"FATAL: index download failed, app cannot start: {exc}")
+    raise
 
 # --- 2. THE ACTUAL QUERY-PROCESSING FUNCTION - THIS is what needs GPU ---
 # @spaces.GPU grants ephemeral GPU access for the duration of this call.
