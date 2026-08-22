@@ -29,34 +29,85 @@ def ensure_indexes():
 ensure_indexes()
 
 
-@spaces.GPU(duration=30)
-def answer_question(question: str):
-    from rag.harness import run_from_text
-    res = run_from_text(question)
+def _format_result(res, transcribed_question=None, detected_language=None):
     answer = res.get("answer") or "No answer verified — the system declined rather than guess."
     tier = res.get("tier", "N/A")
     timing = res.get("timing", {}).get("retrieval_ms", 0)
-    status_str = f"**Tier used:** {tier}  |  **Retrieval latency:** {timing:.1f} ms"
-    return answer, status_str
+    stt_ms = res.get("timing", {}).get("stt_ms", 0)
+
+    status_lines = [f"**Tier used:** {tier}  |  **Retrieval latency:** {timing:.1f} ms"]
+    if transcribed_question:
+        status_lines.append(f"**Transcribed question:** {transcribed_question}")
+    if detected_language:
+        status_lines.append(f"**Detected language:** {detected_language}")
+    if stt_ms:
+        status_lines.append(f"*(STT: {stt_ms:.1f}ms — voice capture time, not counted in retrieval latency above)*")
+
+    return answer, "\n\n".join(status_lines)
 
 
-with gr.Blocks(title="Kosmos - Tiered Cascade RAG") as demo:
-    gr.Markdown("# Kosmos — Voice/Text RAG (Hindi, Bengali, English)")
-    gr.Markdown("3-tier retrieval cascade: fast MiniLM tiers first, BGE-M3 escalation only when needed. No LLM generation - answers are verbatim retrieved evidence.")
+@spaces.GPU(duration=30)
+def answer_from_text(question: str):
+    from rag.harness import run_from_text
+    res = run_from_text(question)
+    return _format_result(res)
 
-    with gr.Row():
-        with gr.Column():
-            q_input = gr.Textbox(
-                label="Ask a question (Hindi, Bengali, or English)",
-                placeholder="कॉर्पोरेशन क्या है?",
-                lines=2,
-            )
-            submit_btn = gr.Button("Ask", variant="primary")
 
-        with gr.Column():
-            a_output = gr.Textbox(label="Answer", lines=4)
-            meta_output = gr.Markdown("Ready...")
+@spaces.GPU(duration=30)
+def answer_from_audio(audio_path: str):
+    if audio_path is None:
+        return "Please record or upload audio first.", "No audio received."
 
-    submit_btn.click(fn=answer_question, inputs=[q_input], outputs=[a_output, meta_output])
+    from stt.sarvam_stt import transcribe
+    from rag.harness import run_from_text
+
+    with open(audio_path, "rb") as f:
+        audio_bytes = f.read()
+
+    transcription = transcribe(audio_bytes)
+    question = transcription["text"]
+    language = transcription.get("language")
+
+    res = run_from_text(question)
+    return _format_result(res, transcribed_question=question, detected_language=language)
+
+
+with gr.Blocks(title="Kosmos - Voice RAG") as demo:
+    gr.Markdown("# Kosmos — Voice-Enabled RAG (Hindi, Bengali, English)")
+    gr.Markdown(
+        "Speak (or type) a question. Pipeline: Sarvam speech-to-text → "
+        "3-tier retrieval cascade (fast MiniLM tiers first, BGE-M3 escalation "
+        "only when needed) → verbatim grounded answer. No LLM generation."
+    )
+
+    with gr.Tab("Voice input"):
+        with gr.Row():
+            with gr.Column():
+                audio_input = gr.Audio(
+                    sources=["microphone", "upload"],
+                    type="filepath",
+                    label="Record or upload your question",
+                )
+                voice_btn = gr.Button("Ask (voice)", variant="primary")
+            with gr.Column():
+                voice_answer = gr.Textbox(label="Answer", lines=4)
+                voice_meta = gr.Markdown("Ready...")
+
+        voice_btn.click(fn=answer_from_audio, inputs=[audio_input], outputs=[voice_answer, voice_meta])
+
+    with gr.Tab("Text input (fallback)"):
+        with gr.Row():
+            with gr.Column():
+                q_input = gr.Textbox(
+                    label="Ask a question (Hindi, Bengali, or English)",
+                    placeholder="कॉर्पोरेशन क्या है?",
+                    lines=2,
+                )
+                text_btn = gr.Button("Ask (text)", variant="secondary")
+            with gr.Column():
+                text_answer = gr.Textbox(label="Answer", lines=4)
+                text_meta = gr.Markdown("Ready...")
+
+        text_btn.click(fn=answer_from_text, inputs=[q_input], outputs=[text_answer, text_meta])
 
 demo.launch()
